@@ -119,6 +119,8 @@ export class PlayerCar {
   absActive = false;
   tcsActive = false;
   setup: DriveSetup = { ...DEFAULT_SETUP };
+  /** Nitro burn 0..1: more power, less drag and a longer top gear while it lasts. */
+  boost = 0;
   private steerFrac = 0;
   /** Low-passed longitudinal acceleration: load transfer follows the suspension, not instantly. */
   private axLoad = 0;
@@ -192,7 +194,8 @@ export class PlayerCar {
   /** Road speed at the redline in gear g; gears spread geometrically. */
   private gearTop(g: number): number {
     const h = this.handling;
-    return h.topSpeed * TOP_GEAR_OVERRUN * Math.pow(g / h.gears, 0.8);
+    // Nitro stretches the top gear so the limiter doesn't cap the extra speed.
+    return h.topSpeed * TOP_GEAR_OVERRUN * Math.pow(g / h.gears, 0.8) * (g >= h.gears ? 1 + 0.22 * this.boost : 1);
   }
 
   private wheelRpm(v: number, g: number): number {
@@ -331,7 +334,7 @@ export class PlayerCar {
     // --- Longitudinal forces per axle.
     const cut = this.shiftT > 0 && !h.cvt ? 0 : this.limiterT > 0 ? 0 : 1 - this.espCut;
     const pw = powerCurve(this.rpm / h.redline);
-    const drive = c.throttle * cut * ((h.powerW * WHEEL_POWER * pw) / Math.max(v, 4));
+    const drive = Math.max(c.throttle, this.boost) * cut * ((h.powerW * WHEEL_POWER * pw * (1 + 0.45 * this.boost)) / Math.max(v, 4));
     const brake = c.brake * m * 11 * (v > 0.3 ? 1 : 0);
     const engineBrake = c.throttle < 0.05 && v > 1 ? m * (0.5 + 0.7 * (this.rpm / h.redline)) : 0;
     const df = DRIVE_FRONT[this.drivetrain];
@@ -388,7 +391,7 @@ export class PlayerCar {
     // --- Body equations.
     const pTop = h.powerW * WHEEL_POWER * powerCurve(1 / TOP_GEAR_OVERRUN);
     const roll = 0.012 * W;
-    const dragK = Math.max(pTop / h.topSpeed - roll, 0) / h.topSpeed ** 2;
+    const dragK = Math.max(pTop / h.topSpeed - roll, 0) / h.topSpeed ** 2 / (1 + 0.3 * this.boost);
     const resist = v > 0.1 ? dragK * v * v + roll : 0;
     const cosD = Math.cos(delta);
     const sinD = Math.sin(delta);

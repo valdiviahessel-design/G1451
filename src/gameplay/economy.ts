@@ -25,9 +25,16 @@ export function runPayout(score: number, km: number, crashed: boolean): number {
 }
 
 /** Per-car visual tuning, saved with the profile. Missing fields mean factory spec. */
+export type PaintFinish = 'gloss' | 'metallic' | 'pearl' | 'satin' | 'matte' | 'chrome';
+
 export interface CarTuning {
+  /** Body colour, 0xRRGGBB: a PAINTS preset or any custom colour. */
   paint?: number;
+  /** Paint finish; missing = the car's factory finish. */
+  finish?: PaintFinish;
   rim?: number;
+  /** Underglow neon colour, 0xRRGGBB; missing or 0 = off. */
+  glow?: number;
   /** Window tint 0..1. */
   tint?: number;
   /** Suspension drop, m (0 = stock, negative = lower). */
@@ -60,6 +67,28 @@ export const RIMS: { name: string; color: number }[] = [
   { name: 'Бронза', color: 0x8a5a2e },
   { name: 'Белый', color: 0xe9e9e6 },
   { name: 'Красный', color: 0xa3141b },
+];
+
+export const FINISHES: { name: string; value: PaintFinish }[] = [
+  { name: 'Глянец', value: 'gloss' },
+  { name: 'Металлик', value: 'metallic' },
+  { name: 'Перламутр', value: 'pearl' },
+  { name: 'Сатин', value: 'satin' },
+  { name: 'Мат', value: 'matte' },
+  { name: 'Хром', value: 'chrome' },
+];
+
+/** Underglow neon colours; 0 switches it off. */
+export const GLOWS: { name: string; color: number }[] = [
+  { name: 'Выкл', color: 0 },
+  { name: 'Лёд', color: 0x35d6ff },
+  { name: 'Синий', color: 0x2f5bff },
+  { name: 'Фиолет', color: 0xa23bff },
+  { name: 'Розовый', color: 0xff3fa4 },
+  { name: 'Красный', color: 0xff2b2b },
+  { name: 'Оранжевый', color: 0xff8a1f },
+  { name: 'Лайм', color: 0x8dff3a },
+  { name: 'Белый', color: 0xf2f6ff },
 ];
 
 export const TINTS: { name: string; value: number }[] = [

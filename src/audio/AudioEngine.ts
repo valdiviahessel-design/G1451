@@ -450,6 +450,18 @@ export class AudioEngine {
     this.tone(520, 0.35, 0.08, 'sawtooth', 0, 260);
   }
 
+  /** Nitro valve opening: a rising hiss and a low thump. */
+  nitro(): void {
+    this.burst(0.9, 'highpass', 3200, 0.7, 0.3);
+    this.burst(0.5, 'bandpass', 700, 0.8, 0.22);
+    this.tone(180, 0.6, 0.12, 'sawtooth', 0, 520);
+  }
+
+  /** Mission complete / reward jingle. */
+  reward(): void {
+    [660, 880, 1320].forEach((f, i) => this.tone(f, 0.3, 0.1, 'triangle', i * 0.09));
+  }
+
   click(): void {
     this.tone(1400, 0.05, 0.06, 'triangle');
   }

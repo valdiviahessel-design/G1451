@@ -31,3 +31,7 @@ export const VIEW_AHEAD = 1100;
 export const VIEW_BEHIND = 140;
 
 export const KMH = 1 / 3.6;
+
+/** Oncoming carriageway beyond the median (scenery only): inner and outer edge lines. */
+export const OPP_INNER = -(BASE_HALF_WIDTH + LANE_WIDTH + 2.46);
+export const OPP_OUTER = OPP_INNER - BASE_LANES * LANE_WIDTH;
