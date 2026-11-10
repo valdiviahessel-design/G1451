@@ -1,7 +1,27 @@
 import * as THREE from 'three';
 import { TRAFFIC_CARS, type TrafficSpec } from '../assets/vehicles';
 import type { VehicleLoader, VehicleModel } from '../assets/VehicleLoader';
+import type { GlowSprites } from '../graphics/GlowSprites';
+import { bakeTrafficLod, createLodMaterial } from './TrafficLod';
 import type { TrafficCar, TrafficType } from './TrafficSystem';
+
+/** Detailed models are only drawn this close to the player; beyond it cars use the instanced LOD. */
+const NEAR_AHEAD = 105;
+const NEAR_BEHIND = 28;
+const LOD_CAPACITY = 32;
+
+/** Instanced far LOD of one traffic type, plus an invisible twin that only casts shadows. */
+interface LodSet {
+  far: THREE.InstancedMesh;
+  shadow: THREE.InstancedMesh;
+  nFar: number;
+  nShadow: number;
+}
+
+const _m = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _p = new THREE.Vector3();
+const _one = new THREE.Vector3(1, 1, 1);
 
 /** Simulation types derived from the traffic model specs; vans are the slow, keep-right class. */
 export const TRAFFIC_TYPES: TrafficType[] = TRAFFIC_CARS.map((t) => ({
@@ -38,6 +58,8 @@ function ghostModel(root: THREE.Object3D, on: boolean): void {
 }
 
 class Pooled {
+  /** Drawn as the detailed model (true) or as an LOD instance. */
+  near = true;
   readonly blinkL: THREE.MeshBasicMaterial;
   readonly blinkR: THREE.MeshBasicMaterial;
 
@@ -84,6 +106,11 @@ export class TrafficView {
   private night = false;
   private ghost = false;
   private time = 0;
+  private readonly lods = new Map<string, LodSet>();
+  private readonly lodMat = createLodMaterial();
+  /** Writes nothing in the colour pass; the shadow pass swaps in its own depth material. */
+  private readonly shadowMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+  private shadows = true;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -117,6 +144,20 @@ export class TrafficView {
       // Traffic receives but doesn't cast: dozens of extra shadow casters are too costly on mobile.
       if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = false;
     });
+    if (!this.lods.has(spec.id)) {
+      const lod = bakeTrafficLod(model);
+      const far = new THREE.InstancedMesh(lod.far, this.lodMat, LOD_CAPACITY);
+      const shadow = new THREE.InstancedMesh(lod.full, this.shadowMat, LOD_CAPACITY);
+      far.setColorAt(0, new THREE.Color(1, 1, 1));
+      for (const im of [far, shadow]) {
+        im.count = 0;
+        im.frustumCulled = false;
+        this.scene.add(im);
+      }
+      far.receiveShadow = true;
+      shadow.castShadow = true;
+      this.lods.set(spec.id, { far, shadow, nFar: 0, nShadow: 0 });
+    }
     const p = new Pooled(model, spec);
     p.model.materials.lights.setNight(this.night);
     if (this.ghost) ghostModel(model.root, true);
@@ -125,6 +166,8 @@ export class TrafficView {
 
   private release(p: Pooled): void {
     p.model.root.removeFromParent();
+    p.model.root.visible = true;
+    p.near = true;
     p.setBlink(0, false);
     p.model.materials.lights.setBrake(false);
     const list = this.free.get(p.spec.id) ?? [];
@@ -180,18 +223,59 @@ export class TrafficView {
   setGhost(on: boolean): void {
     if (on === this.ghost) return;
     this.ghost = on;
+    this.lodMat.transparent = on;
+    this.lodMat.opacity = on ? GHOST_OPACITY : 1;
+    this.lodMat.depthWrite = !on;
+    this.lodMat.needsUpdate = true;
     for (const p of this.active.values()) ghostModel(p.model.root, on);
     for (const list of this.free.values()) for (const p of list) ghostModel(p.model.root, on);
   }
 
-  update(dt: number, cars: readonly TrafficCar[], origin: number): void {
+  /** Traffic shadows come from the LOD twins; off with the sun's shadow map. */
+  setShadows(on: boolean): void {
+    this.shadows = on;
+  }
+
+  /**
+   * Cars near the player show their detailed model (lights, indicators, spinning
+   * wheels); the rest go into one instanced draw per type. `glows` receives the
+   * tail lights of those distant cars.
+   */
+  update(dt: number, cars: readonly TrafficCar[], origin: number, playerS: number, glows: GlowSprites | null = null): void {
     this.time += dt;
-    // ~1.5 Hz indicator cadence, per-car phase so a queue doesn't flash in sync.
+    for (const l of this.lods.values()) l.nFar = l.nShadow = 0;
+    const castShadows = this.shadows && !this.ghost;
     for (const c of cars) {
       const p = this.active.get(c.id);
       if (!p) continue;
       const { root, body, wheels, wheelRadius } = p.model;
-      root.position.set(c.x, 0, -(c.s - origin));
+      const d = c.s - playerS;
+      const lod = this.lods.get(p.spec.id);
+      // A little hysteresis so a car pacing the boundary doesn't flicker between forms.
+      const slack = p.near ? 8 : 0;
+      p.near = !lod || (d < NEAR_AHEAD + slack && d > -NEAR_BEHIND - slack);
+      root.visible = p.near;
+      const z = -(c.s - origin);
+      if (lod && (!p.near || (castShadows && d > -50 && d < 90))) {
+        _m.compose(_p.set(c.x, 0, z), _q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, -c.psi), _one);
+        if (!p.near && lod.nFar < LOD_CAPACITY) {
+          lod.far.setMatrixAt(lod.nFar, _m);
+          lod.far.setColorAt(lod.nFar++, p.model.materials.paint.color);
+        }
+        if (castShadows && d > -50 && d < 90 && lod.nShadow < LOD_CAPACITY) lod.shadow.setMatrixAt(lod.nShadow++, _m);
+      }
+      if (!p.near) {
+        if (glows && (this.night || c.braking)) {
+          const k = c.braking ? 2.4 : 1;
+          const w = p.spec.width * 0.36;
+          const y = p.spec.height * 0.52;
+          const zr = z + p.spec.length / 2;
+          glows.add(c.x - w, y, zr, 1.0 * k, 2.4 * k, 0.1, 0.06);
+          glows.add(c.x + w, y, zr, 1.0 * k, 2.4 * k, 0.1, 0.06);
+        }
+        continue;
+      }
+      root.position.set(c.x, 0, z);
       root.rotation.y = -c.psi;
       body.rotation.x = THREE.MathUtils.clamp(c.accel, -8, 3) * 0.0045;
       body.rotation.z = -c.bumpV * 0.02;
@@ -201,12 +285,30 @@ export class TrafficView {
         if (w.front) w.steer.rotation.y = -c.psi * 2.5;
       }
       p.model.materials.lights.setBrake(c.braking);
+      // ~1.5 Hz indicator cadence, per-car phase so a queue doesn't flash in sync.
       p.setBlink(c.signal, (this.time + c.id * 0.137) % 0.68 < 0.36);
+    }
+    for (const l of this.lods.values()) {
+      l.far.count = l.nFar;
+      l.shadow.count = l.nShadow;
+      if (l.nFar) {
+        l.far.instanceMatrix.needsUpdate = true;
+        l.far.instanceColor!.needsUpdate = true;
+      }
+      if (l.nShadow) l.shadow.instanceMatrix.needsUpdate = true;
     }
   }
 
   dispose(): void {
     this.clear();
+    for (const l of this.lods.values()) {
+      l.far.removeFromParent();
+      l.shadow.removeFromParent();
+      l.far.geometry.dispose();
+      l.shadow.geometry.dispose();
+    }
+    this.lodMat.dispose();
+    this.shadowMat.dispose();
     for (const list of this.free.values()) for (const p of list) p.dispose();
     this.free.clear();
   }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { PaintFinish } from '../gameplay/economy';
 
 export type PartClass =
   | 'paint'
@@ -21,6 +22,23 @@ export type PartClass =
   // Lamp surfaces textured by the author: keep the texture, light it from within.
   | 'headmap'
   | 'tailmap';
+
+interface FinishSpec {
+  metalness: number;
+  roughness: number;
+  clearcoat: number;
+  clearcoatRoughness: number;
+  env: number;
+}
+
+const FINISH: Record<PaintFinish, FinishSpec> = {
+  gloss: { metalness: 0.04, roughness: 0.42, clearcoat: 1, clearcoatRoughness: 0.04, env: 1.1 },
+  metallic: { metalness: 0.6, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.06, env: 1.15 },
+  pearl: { metalness: 0.35, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.05, env: 1.2 },
+  satin: { metalness: 0.3, roughness: 0.52, clearcoat: 0.3, clearcoatRoughness: 0.4, env: 0.9 },
+  matte: { metalness: 0.02, roughness: 0.82, clearcoat: 0, clearcoatRoughness: 0.6, env: 0.65 },
+  chrome: { metalness: 1, roughness: 0.07, clearcoat: 1, clearcoatRoughness: 0.02, env: 1.35 },
+};
 
 export interface CarPaintOptions {
   paint: THREE.ColorRepresentation;
@@ -300,6 +318,7 @@ export class CarMaterialSet {
   readonly rim: THREE.MeshStandardMaterial;
   readonly lights = new CarLights();
   private readonly interior: boolean;
+  private readonly factoryFinish: FinishSpec;
 
   constructor(opts: CarPaintOptions) {
     const m = THREE.MathUtils.clamp(opts.metallic, 0, 1);
@@ -307,14 +326,15 @@ export class CarMaterialSet {
     this.interior = opts.interior !== false;
     // Flaked base under a mirror clear coat: solid paints are dielectric, metallic ones gain metalness
     // (kept moderate: high values turn the body into coloured chrome) and a tighter base lobe.
+    const p0 = { metalness: 0.08 + m * 0.5, roughness: 0.46 - m * 0.16 };
     this.paint = limitGlare(new THREE.MeshPhysicalMaterial({
       color: opts.paint,
-      metalness: 0.08 + m * 0.5,
-      roughness: 0.46 - m * 0.16,
+      ...p0,
       clearcoat: 1,
       clearcoatRoughness: 0.06,
       envMapIntensity: 1.1,
     }));
+    this.factoryFinish = { metalness: p0.metalness, roughness: p0.roughness, clearcoat: 1, clearcoatRoughness: 0.06, env: 1.1 };
     // Glass darkens what is behind it but adds its reflections at full strength (src ONE, dst 1-α).
     this.glass = limitGlare(new THREE.MeshPhysicalMaterial({
       metalness: 0,
@@ -371,6 +391,23 @@ export class CarMaterialSet {
 
   setPaint(color: THREE.ColorRepresentation): void {
     this.paint.color.set(color);
+  }
+
+  /** Paint finish from the tuning shop; undefined restores the factory finish. */
+  setFinish(finish?: PaintFinish): void {
+    const p = this.paint;
+    const f = finish ? FINISH[finish] : this.factoryFinish;
+    p.metalness = f.metalness;
+    p.roughness = f.roughness;
+    p.clearcoat = f.clearcoat;
+    p.clearcoatRoughness = f.clearcoatRoughness;
+    p.envMapIntensity = f.env;
+    // Pearl: a thin-film layer shifts the hue with the viewing angle.
+    const pearl = finish === 'pearl';
+    if (pearl !== p.iridescence > 0) p.needsUpdate = true;
+    p.iridescence = pearl ? 1 : 0;
+    p.iridescenceIOR = 1.7;
+    p.iridescenceThicknessRange = [180, 420];
   }
 
   /** Window tint 0 (clear) .. 1 (limo). Models without a cabin keep their glass more opaque. */

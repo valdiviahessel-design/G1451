@@ -1,4 +1,4 @@
-export type Action = 'throttle' | 'brake' | 'left' | 'right';
+export type Action = 'throttle' | 'brake' | 'left' | 'right' | 'nitro';
 
 const KEYMAP: Record<string, Action> = {
   KeyW: 'throttle',
@@ -9,6 +9,8 @@ const KEYMAP: Record<string, Action> = {
   ArrowLeft: 'left',
   KeyD: 'right',
   ArrowRight: 'right',
+  Space: 'nitro',
+  ShiftRight: 'nitro',
 };
 
 /** Held driving keys plus one-shot handlers for menu-style keys. */
