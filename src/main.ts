@@ -4,7 +4,7 @@ import { PLAYER_CARS, findPlayerCar, type VehicleSpec } from './assets/vehicles'
 import { creditFor } from './assets/credits';
 import { VehicleLoader } from './assets/VehicleLoader';
 import { AudioEngine } from './audio/AudioEngine';
-import { events, type LightingPreset } from './core/EventBus';
+import { events, isNight } from './core/EventBus';
 import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
 import { DENSITY_SCALE, PACE_SCALE, sanitizeSettings, type Quality, type Settings } from './core/Settings';
@@ -208,16 +208,24 @@ async function boot(): Promise<void> {
   applyGraphics();
   applySettings();
 
-  const applyPreset = async (preset: LightingPreset) => {
-    await env.apply(preset);
-    mats.applyPreset(preset);
-    post.applyPreset(preset);
-    const night = preset === 'night';
+  /** Dresses the world for a map: road furniture, lighting, scenery and weather. */
+  const applyMap = async (m: MapDef) => {
+    const rebuild = mats.theme !== m.theme || !worldReady;
+    mats.applyTheme(m.theme);
+    await env.apply(m.preset);
+    mats.applyPreset(m.preset);
+    post.applyPreset(m.preset);
+    if (rebuild) road.rebuild(car.s);
+    scenery.setTheme(m.theme, m.preset, env.fogColor, env.sunDirection, car.s);
+    worldReady = true;
+    const night = isNight(m.preset);
     lights.setEnabled(night);
+    lights.setColor(m.theme === 'tokyo' ? 0xcfe6ff : 0xffd2a0);
     if (mode !== 'lobby') view.setNight(night);
     trafficView.setNight(night);
-    events.emit('preset:changed', preset);
+    events.emit('preset:changed', m.preset);
   };
+  let worldReady = false;
 
   // ---------------------------------------------------------------- traffic
   const pstate: PlayerState = { s: 0, x: 0, speed: 0, psi: 0, length: car.length, width: car.width };
@@ -258,7 +266,7 @@ async function boot(): Promise<void> {
   };
   const toRoad = () => {
     scene.add(view.model.root);
-    view.setNight(env.preset === 'night');
+    view.setNight(isNight(env.preset));
   };
   const showCar = async () => {
     hud.setCar(spec.name, spec.tagline);
@@ -310,7 +318,9 @@ async function boot(): Promise<void> {
     map = next;
     save.map = map.id;
     persist();
-    await applyPreset(map.preset);
+    await applyMap(map);
+    // New scenery brings new shader programs: compile them behind the menu, not mid-run.
+    await renderer.compileAsync(scene, rig.camera);
   };
 
   // Optional start offset (?s=meters) is handy for jumping straight to a pocket.
@@ -321,7 +331,7 @@ async function boot(): Promise<void> {
     world.position.z = origin;
     road.prime(startS);
   }
-  await applyPreset(map.preset);
+  await applyMap(map);
   resetTraffic();
 
   const cameraTarget = () => ({
@@ -573,7 +583,10 @@ async function boot(): Promise<void> {
   input.onKey('ShiftLeft', () => shift(1));
   input.onKey('KeyQ', () => shift(-1));
   input.onKey('ControlLeft', () => shift(-1));
-  input.onKey('KeyN', () => void applyPreset(env.preset === 'golden' ? 'day' : env.preset === 'day' ? 'night' : 'golden'));
+  input.onKey('KeyN', () => {
+    map = MAPS[(MAPS.indexOf(map) + 1) % MAPS.length];
+    void applyMap(map);
+  });
   input.onKey('KeyH', () => hud.toggle());
   input.onKey('KeyC', () => {
     rig.toggleMode();
@@ -771,7 +784,7 @@ async function boot(): Promise<void> {
   // Debug handle for console tinkering and automated screenshots.
   Object.assign(window, {
     __game: {
-      renderer, scene, car, road, env, rig, showroom, menu, settings, applyPreset, switchCar, platform, scoring, audio, startRun, endRun, setPaused,
+      renderer, scene, car, road, env, rig, showroom, menu, hud, settings, applyMap, switchCar, platform, scoring, audio, startRun, endRun, setPaused,
       get traffic() { return traffic; },
       get view() { return view; },
       get mode() { return mode; },

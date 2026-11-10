@@ -4,7 +4,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import type { LightingPreset } from '../core/EventBus';
+import { isNight, type LightingPreset } from '../core/EventBus';
 
 /**
  * Speed-driven lens effects, applied in linear HDR before tone mapping:
@@ -96,7 +96,7 @@ export class PostFX {
   }
 
   applyPreset(preset: LightingPreset): void {
-    const night = preset === 'night';
+    const night = isNight(preset);
     // Bloom runs on scene-linear HDR before exposure. By day sunlit asphalt, paint and
     // markings reach 2–4, so a low threshold veils the whole frame; only true light
     // sources (sun glints, brake lights, indicators, lamps) should cross it.
