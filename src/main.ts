@@ -11,7 +11,7 @@ import { Input } from './core/Input';
 import { DENSITY_SCALE, PACE_SCALE, sanitizeSettings, type Quality, type Settings } from './core/Settings';
 import { AD_REWARD, CAR_PRICES, START_MONEY, priceOf, runPayout, type CarTuning } from './gameplay/economy';
 import { MAPS, findMap, type MapDef } from './gameplay/maps';
-import { Missions, type MissionState } from './gameplay/Missions';
+import { Missions, type MissionState, type MissionTick } from './gameplay/Missions';
 import { Scoring, resolveTrafficContacts } from './gameplay/Scoring';
 import { CameraRig } from './graphics/CameraRig';
 import { Environment } from './graphics/Environment';
@@ -206,6 +206,18 @@ async function boot(): Promise<void> {
   // ?aq=0 pins the resolution (benchmarks, automated screenshots on software GL).
   const adaptive = new AdaptiveQuality(applyResolution);
   const adaptiveAllowed = params.get('aq') !== '0' && !navigator.webdriver;
+  // Half resolution and still short of 60 FPS: step the quality preset down a notch.
+  adaptive.degrade = () => {
+    const order: Quality[] = ['low', 'medium', 'high', 'ultra'];
+    const i = order.indexOf(settings.quality);
+    if (i <= 0) return false;
+    settings.quality = order[i - 1];
+    applyGraphics();
+    menu.setSettings(settings);
+    persist();
+    menu.toast('Качество графики снижено, чтобы держать 60 FPS');
+    return true;
+  };
   const applyGraphics = () => {
     const q = QUALITY[settings.quality];
     adaptive.enabled = settings.autoQuality && adaptiveAllowed;
@@ -408,6 +420,10 @@ async function boot(): Promise<void> {
   let nitro = 0.5;
   let boosting = false;
   const missions = new Missions(save.missions);
+  /** Test drives and ghost traffic are practice: they neither pay nor count toward missions. */
+  const track = (t: MissionTick) => {
+    if (!testDrive && !settings.ghostTraffic) missions.track(t);
+  };
   /** Per-run figures for the results card and the missions. */
   const run = { time: 0, topSpeed: 0, lastS: 0, cleanFrom: 0 };
   /** Seconds each aid lamp stays lit after the aid last intervened. */
@@ -419,11 +435,11 @@ async function boot(): Promise<void> {
     if (e.kind === 'near' || e.kind === 'crazy') {
       audio.nearMiss(e.kind === 'crazy', 0);
       nitro = Math.min(1, nitro + NITRO_GAIN[e.kind]);
-      missions.track({ near: 1 });
+      track({ near: 1 });
     } else if (e.kind === 'squeeze') {
       audio.squeeze();
       nitro = Math.min(1, nitro + NITRO_GAIN.squeeze);
-      missions.track({ squeeze: 1 });
+      track({ squeeze: 1 });
     } else if (e.kind === 'combo-lost' || e.kind === 'crash') {
       audio.comboLost();
       if (e.kind === 'crash') run.cleanFrom = car.s;
@@ -721,12 +737,12 @@ async function boot(): Promise<void> {
         controls.brake = live && input.isDown('brake') ? 1 : 0;
         controls.steer = live ? input.steer : 0;
         // Nitro: needs a little in the tank to light, then burns until released or empty.
-        const want = live && input.isDown('nitro') && nitro > (boosting ? 0 : 0.08);
+        const want = live && input.isDown('nitro') && nitro > (boosting ? 0 : 0.15);
         if (want && !boosting) audio.nitro();
         boosting = want;
         if (boosting) {
           nitro = Math.max(0, nitro - dt / NITRO_BURN);
-          missions.track({ nitro: dt });
+          track({ nitro: dt });
         } else nitro = Math.min(1, nitro + NITRO_REGEN * dt);
         run.time += dt;
       }
@@ -847,7 +863,7 @@ async function boot(): Promise<void> {
       if (hudTimer <= 0 && mode === 'play') {
         hudTimer = 0.05;
         run.topSpeed = Math.max(run.topSpeed, car.speed);
-        missions.track({
+        track({
           km: (car.s - run.lastS) / 1000,
           score: scoring.score,
           combo: scoring.multiplier,
@@ -901,7 +917,7 @@ async function boot(): Promise<void> {
   // Debug handle for console tinkering and automated screenshots.
   Object.assign(window, {
     __game: {
-      renderer, scene, car, road, env, rig, showroom, menu, hud, settings, applyMap, switchCar, platform, scoring, audio, startRun, endRun, setPaused,
+      renderer, scene, car, road, env, rig, showroom, menu, hud, settings, loop, applyMap, switchCar, platform, scoring, audio, startRun, endRun, setPaused,
       get traffic() { return traffic; },
       get view() { return view; },
       get mode() { return mode; },

@@ -1,28 +1,33 @@
-/** Lowest render scale the governor may fall to. */
-const MIN_SCALE = 0.55;
+/** Lowest render scale the governor may fall to before it asks for a lower quality preset. */
+const MIN_SCALE = 0.5;
 
 /**
  * Dynamic resolution: watches the real frame rate and trades pixels for a
- * steady 60 FPS. Steps down quickly when frames are dropped, creeps back up
- * when there is headroom, and backs off after a failed attempt to go up so it
- * never oscillates.
+ * steady 60 FPS. Steps down quickly when frames are dropped and creeps back up
+ * when there is headroom; a step up that costs frames lowers the ceiling for a
+ * while, so it settles instead of oscillating. If even the lowest scale can't
+ * hold the target, `degrade` is asked to drop the quality preset.
  */
 export class AdaptiveQuality {
   enabled = true;
   /** Frame-rate cap from settings (0 = display rate); the target follows it. */
   fpsLimit = 0;
   scale = 1;
+  /** Called when the minimum scale still misses the target; return false if nothing is left to lower. */
+  degrade: (() => boolean) | null = null;
   private time = 0;
   private frames = 0;
   private calm = 0;
   private settle = 0;
-  private upWait = 4;
+  private ceiling = 1;
+  private ceilingAge = 0;
   private triedUp = false;
+  private struggling = 0;
 
   constructor(private readonly apply: (scale: number) => void) {}
 
   reset(): void {
-    this.time = this.frames = this.calm = 0;
+    this.time = this.frames = this.calm = this.struggling = 0;
     this.settle = 2;
   }
 
@@ -43,21 +48,36 @@ export class AdaptiveQuality {
       this.settle--;
       return;
     }
+    // The ceiling left by a failed step up relaxes slowly, in case the load has eased.
+    if (this.ceiling < 1 && ++this.ceilingAge >= 90) {
+      this.ceilingAge = 0;
+      this.ceiling = Math.min(1, this.ceiling + 0.05);
+    }
     const target = this.fpsLimit > 0 ? Math.min(60, this.fpsLimit) : 60;
-    if (fps < target * 0.93) {
+    if (fps < target * 0.965) {
       this.calm = 0;
-      if (this.scale <= MIN_SCALE) return;
-      // A step up that immediately cost frames: wait longer before trying again.
-      if (this.triedUp) this.upWait = Math.min(60, this.upWait * 2);
+      if (this.triedUp) {
+        this.ceiling = Math.max(MIN_SCALE, this.scale - 0.06);
+        this.ceilingAge = 0;
+        this.triedUp = false;
+      }
+      if (this.scale > MIN_SCALE) {
+        this.struggling = 0;
+        this.set(this.scale - (fps < target * 0.75 ? 0.15 : 0.07));
+      } else if (++this.struggling >= 3) {
+        this.struggling = 0;
+        if (this.degrade?.()) this.settle = 3;
+      }
+    } else {
+      this.struggling = 0;
       this.triedUp = false;
-      this.set(this.scale - (fps < target * 0.75 ? 0.15 : 0.08));
-    } else if (fps >= target * 0.985 && this.scale < 1) {
-      if (++this.calm >= this.upWait) {
+      // Each change reallocates render targets, so steps of a percent or two are not worth taking.
+      if (fps >= target * 0.99 && this.scale < this.ceiling - 0.035 && ++this.calm >= 4) {
         this.calm = 0;
         this.triedUp = true;
-        this.set(this.scale + 0.07);
+        this.set(Math.min(this.ceiling, this.scale + 0.06));
       }
-    } else this.triedUp = false;
+    }
   }
 
   private set(scale: number): void {
@@ -69,6 +89,7 @@ export class AdaptiveQuality {
   /** Back to full resolution (settings changed or the governor was switched off). */
   restore(): void {
     this.reset();
+    this.ceiling = 1;
     if (this.scale !== 1) {
       this.scale = 1;
       this.apply(1);

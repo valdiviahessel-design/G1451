@@ -2,6 +2,24 @@
 
 Browser 3D traffic-weaving game (No Hesi style) on **TypeScript + Three.js (r187) + Vite**, targeting Yandex Games.
 
+## What changed in the overhaul
+
+Everything below is in the game now; details are in the sections that follow.
+
+- **Two new maps in Japan.** *Сакура-лайн*: a spring morning under a sakura avenue with drifting petals, Mount Fuji,
+  mountain ranges, pagodas, a castle, farmhouses, bamboo and a giant torii over the road. *Ночной Токио*: a walled
+  expressway through neon towers, vertical kanji signboards, Tokyo Tower, a broadcast tower and a magenta city haze.
+- **The original highway was rebuilt.** An oncoming carriageway with its own traffic, trees (four species), panel
+  blocks and glass towers with real window grids, advert hoardings, overhead direction signs every 800 m, viaducts every
+  1.6 km, noise barriers, a far skyline, and rain on the night map.
+- **New UI from the loading screen to the results card**: dark glass panels, one lime accent, Manrope + Oswald type,
+  track cards with real renders of each map, a new tachometer, nitro bar, banners and touch layout.
+- **Paint shop**: any colour (picker + hue slider) on top of the presets, six finishes (gloss, metallic, pearl, satin,
+  matte, chrome) and neon underglow. The starter car, whose body is one painted texture, is resprayed in its shader.
+- **Nitro** (Space), **missions** with cash rewards, and run statistics (top speed, average speed, time).
+- **Frame rate**: about 8× fewer draw calls and 4.5× fewer triangles per frame than before, one post-processing pass
+  less, and a resolution governor that holds 60 FPS (see [Performance](#performance)).
+
 ## Run
 
 ```bash
@@ -42,18 +60,21 @@ onto the ground with `GroundedSkybox`; drag to orbit). Pick a car (‹ ›), pre
 | --- | --- |
 | W / ↑, S / ↓ | throttle / brake |
 | A / ←, D / → | steer (hold to change lanes; with the arcade/standard style the car straightens itself when released) |
-| E / Shift, Q / Ctrl | gear up / down (manual gearbox) |
+| Space / right Shift | nitro (hold) |
+| E / left Shift, Q / Ctrl | gear up / down (manual gearbox) |
 | Esc / P | pause (continue · restart · finish the run); Esc also goes back from lobby sub-screens |
 | Enter / Space | lobby → track choice → start |
 | 1–9, 0 | preview a car in the lobby (ten cars, worst → best) |
 | C | camera: chase → far → bumper |
-| N | cycle lighting (debug) |
+| N | cycle maps (debug) |
 | H | toggle HUD |
 
-On touch screens the HUD shows ◀ ▶ steering buttons, ГАЗ / ТОРМОЗ pedals and +/− shift buttons for the manual gearbox.
+On touch screens the HUD shows ◀ ▶ steering buttons, ГАЗ / ТОРМОЗ pedals, a nitro button and +/− shift buttons for
+the manual gearbox.
 
-URL params: `?map=sunset|rush|night`, `?car=e34`, `?play=1` (skip the lobby), `?platform=local` (skip the SDK),
-`?intro=0` (skip the crane shot), `?s=600` (start 600 m down the road), `?cam=bumper|far`.
+URL params: `?map=sunset|rush|night|sakura|tokyo`, `?car=e34`, `?play=1` (skip the lobby), `?platform=local` (skip
+the SDK), `?intro=0` (skip the crane shot), `?s=600` (start 600 m down the road), `?cam=bumper|far`, `?aq=0` (pin
+the render resolution: benchmarks and screenshots).
 
 ### Menu, settings, economy
 
@@ -61,7 +82,13 @@ URL params: `?map=sunset|rush|night`, `?car=e34`, `?play=1` (skip the lobby), `?
   button (+5 000).
 - Lobby: characteristics card (top speed, power, 0–100 measured by the real physics, weight, drive), **Тюнинг** and
   **Играть**, or **Купить** / **Тест-драйв** (after a rewarded video) for cars you don't own.
-- Tuning (owned cars, free): paint (14 colours), rim colour, window tint, ride height; saved per car.
+- Lobby missions: three rotating goals (near misses, distance, score, combo, top speed, clean driving, nitro time)
+  paid in cash when a run ends; a finished mission is replaced by a new one. Test drives and ghost traffic don't count.
+- Tuning (owned cars, free), saved per car:
+  - paint: 14 presets or any custom colour (colour picker and hue slider), plus a finish: gloss, metallic, pearl
+    (thin-film iridescence), satin, matte or chrome;
+  - rim colour, window tint, ride height;
+  - neon underglow in eight colours.
 - Shop: every car with price and status. Start cash 20 000; a run pays `0.35 × score + 400 × km` (half after a
   wreck, nothing in a test drive or with ghost traffic). Prices are in `src/gameplay/economy.ts`.
 - Settings (saved with the profile):
@@ -71,15 +98,33 @@ URL params: `?map=sunset|rush|night`, `?car=e34`, `?play=1` (skip the lobby), `?
   - **Трафик** — density (×0.55 … ×1.9 of the track's own), flow speed (×0.8 / 1 / 1.2), bot lane changes, ghost bots
     (no collisions, no points);
   - **Графика** — quality (pixel-ratio cap, shadow map 0/1k/2k/4k, MSAA 0/0/4/8, bloom and lens effects), render
-    resolution 40–100 %, FPS cap 30 / 60 / unlimited, draw distance 300–1100 m (road streaming + fog).
+    resolution 40–100 %, FPS cap 30 / 60 / unlimited, draw distance 300–1100 m (road streaming + fog), and
+    **Авто-оптимизация** (on by default): dynamic resolution that holds 60 FPS.
 
 ### Maps
 
-| Map | Lighting | Traffic |
-| --- | --- | --- |
-| Закатное шоссе | golden hour (Poly Haven `venice_sunset`) | moderate, 6 cars/km/lane |
-| Полуденный час пик | clear midday (Poly Haven `kloofendal_48d_partly_cloudy_puresky`) | dense, 9 cars/km/lane |
-| Ночная магистраль | wet night (Poly Haven `shanghai_bund`) | light, 5 cars/km/lane |
+| Map | World | Lighting and weather | Traffic |
+| --- | --- | --- | --- |
+| Закатное шоссе | city highway | golden hour (Poly Haven `venice_sunset`) | moderate, 6 cars/km/lane |
+| Полуденный час пик | city highway | clear midday (Poly Haven `kloofendal_48d_partly_cloudy_puresky`) | dense, 9 cars/km/lane |
+| Ночная магистраль | city highway | wet night, rain (Poly Haven `shanghai_bund`) | light, 5 cars/km/lane |
+| Сакура-лайн | Japan, countryside | spring morning, falling petals (the midday sky, re-lit) | moderate, 6 cars/km/lane |
+| Ночной Токио | Japan, expressway | neon night, wet road (the night sky, blurred into a city glow) | brisk, 7 cars/km/lane |
+
+A map is a *theme* (the world beside the road) plus a lighting preset and weather (`src/gameplay/maps.ts`). Every
+piece of scenery is generated at startup: tree billboards, facades, neon signs, direction signs and the backdrop are
+painted on canvases (`src/graphics/WorldTextures.ts`), buildings and landmarks are low-poly meshes built from
+primitives (`src/world/props.ts`). No new files are downloaded, so the two Japanese maps add nothing to the bundle
+beyond their code. Track cards show renders captured in game (`src/assets/maps/*.webp`).
+
+All maps share the road: three lanes with overtake pockets, the median barrier, and now an oncoming carriageway beyond
+it with its own (scenery-only) traffic.
+
+### Nitro
+
+Hold **Space**. A full tank burns for 3.6 s: +45 % power, less drag and a longer top gear (about +20 % top speed),
+with a wider field of view, a cold flash at the edges of the frame and flames at the tailpipes. The tank refills
+slowly on its own and quickly from risk: +12 % per Near Miss, +20 % per Crazy Close, +34 % per Double Squeeze.
 
 ### Scoring
 
@@ -112,6 +157,41 @@ The HUD shows the model credit under the car name. A `public/assets/vehicles/cus
 (see the [README there](public/assets/vehicles/custom/README.md)).
 
 Traffic models are low-poly, 1–6k triangles with 512 px textures, in `public/assets/vehicles/traffic`.
+
+## Performance
+
+Measured on the sunset map at 1280×720, `high` preset, before and after (`renderer.info`, per frame):
+
+| | Before | After |
+| --- | --- | --- |
+| Draw calls | ≈ 1 780 | ≈ 210 |
+| Triangles | ≈ 625 000 | ≈ 136 000 |
+| Full-screen post passes | bloom + lens + output | bloom + one finishing pass |
+
+The other four maps land between 205 and 230 draw calls. What got it there:
+
+- **Traffic LOD.** Each traffic model is baked once into a single vertex-coloured mesh (`src/traffic/TrafficLod.ts`;
+  the four detailed models are also decimated by vertex clustering). Cars more than ~105 m ahead or 28 m behind are
+  drawn as instances of it, one draw call per car type, with the body colour per instance. Only the handful of cars
+  around the player keep their full model with lights, indicators and spinning wheels.
+- **Traffic shadows for free.** The same baked meshes, written to the shadow map only, give every car near the player
+  a real shadow. Traffic had no shadows before because each model cost dozens of extra draws.
+- **Instanced road furniture and scenery.** Street lamps, guard posts, trees, buildings, signs and oncoming traffic are
+  instanced meshes; props recycle from behind the car to the horizon instead of being rebuilt.
+- **One finishing pass.** Lens effects, vignette, ACES tone mapping, the per-map colour grade, sRGB encoding and grain
+  run in a single shader; the radial blur takes one tap when the car is slow and six (jittered) at speed, down from
+  thirty texture reads per pixel.
+- **Light halos as sprites.** Street lamps, distant tail lights and oncoming headlights are one additive instanced mesh,
+  so the number of real lights stays at the pooled five.
+- **Resolution governor** (`src/core/AdaptiveQuality.ts`). It watches the real frame rate once a second, lowers the
+  render scale in steps when it falls under 58 FPS, raises it again when there is headroom, and remembers a scale that
+  cost frames so it does not oscillate. If half resolution is still not enough it drops the quality preset one notch
+  and says so. A simulated GPU that needs 18, 30 or 70 ms per full-resolution frame settles at 91 %, 69 % and 50 %
+  scale with no frames under 57 FPS afterwards.
+
+The frame rate itself could not be measured in the development environment (it has no GPU; headless Chrome renders in
+software at about 1 FPS), so the 60 FPS claim rests on the workload numbers above and on the governor, not on a
+measurement on real hardware.
 
 ## Yandex Games SDK
 
@@ -201,8 +281,8 @@ up to 1.4 rad/s at 150 km/h, slip capped by force), so the car darted left/right
 **Menu, audio, image**
 
 - Lobby in a showroom scene (`src/graphics/Showroom.ts`), shop, tuning, settings with tabs, track choice; pause and
-  results screens (with the cash earned); best score and distance saved through the SDK. Condensed UI font: Oswald
-  (SIL OFL, bundled in `src/assets/fonts`).
+  results screens (with the cash earned); best score and distance saved through the SDK. Fonts: Manrope for text and
+  Oswald for numerals (both SIL OFL, bundled in `src/assets/fonts`).
 - Procedural Web Audio, no samples: an engine synth per car (cylinder count, idle/redline, gear count, turbo, grit)
   driven by a simulated gearbox with shift cuts, load-dependent timbre, turbo whistle and blow-off, overrun
   crackles, CVT whine for the hybrid; tyre squeal, wind, road rumble, traffic pass-by whoosh, impacts and score cues.
@@ -214,14 +294,18 @@ up to 1.4 rad/s at 150 km/h, slip capped by force), so the car darted left/right
 
 ```
 src/
-├── assets/     vehicle manifest, VehicleLoader, car materials
-├── audio/      procedural engine / tyres / wind / impacts (Web Audio)
-├── core/       game loop (fixed step), event bus, input, math, OBB (SAT)
-├── gameplay/   maps, Near Miss / Double Squeeze / combo scoring, traffic contacts
-├── graphics/   environment/IBL, materials, procedural textures, road shader, post FX, camera, scenery
-├── road/       RoadLayout (pocket zones, lane queries), chunk builder, streamer
-├── traffic/    TrafficSystem (AI, no-wall rule, pocket merges), TrafficView (object pool)
-├── vehicle/    PlayerCar (handling), CarView (model, suspension, wheels, lights)
+├── assets/     vehicle manifest, VehicleLoader, car materials (paint finishes), fonts, map renders
+├── audio/      procedural engine / tyres / wind / impacts / nitro (Web Audio)
+├── core/       game loop (fixed step), event bus, input, math, OBB (SAT), AdaptiveQuality (resolution governor)
+├── gameplay/   maps (theme + lighting + weather), missions, scoring, economy and tuning options
+├── graphics/   environment/IBL, materials, procedural and world textures, road shader, post FX, camera,
+│               scenery (instanced props per theme, backdrop), weather (rain, petals), glow sprites
+├── road/       RoadLayout (pocket zones, lane queries), chunk builder (both carriageways, lamps, walls,
+│               gantries, viaducts, torii), streamer
+├── traffic/    TrafficSystem (AI, no-wall rule, pocket merges), TrafficView (object pool + instanced LOD),
+│               TrafficLod (bakes and decimates the far models)
+├── vehicle/    PlayerCar (handling, nitro), CarView (model, suspension, wheels, lights, respray, underglow)
+├── world/      prop geometry (pagoda, castle, torii, towers, Fuji, billboards), oncoming traffic
 ├── platform/   Yandex Games SDK adapter + local stand-in
-└── ui/         loading screen, HUD (score, combo, popups, touch pedals), menu / pause / results
+└── ui/         loading screen, HUD (score, combo, tach, nitro, banners, touch controls), menu / pause / results
 ```

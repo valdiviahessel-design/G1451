@@ -115,8 +115,9 @@ const PRESETS: Record<LightingPreset, PresetConfig> = {
     hdri: 'assets/hdri/night_city.hdr',
     exposure: 0.95,
     envIntensity: 0.6,
-    backgroundIntensity: 0.5,
-    backgroundBlurriness: 0.0,
+    backgroundIntensity: 0.55,
+    // The photographed skyline melts into a glow; the map draws its own Tokyo in front of it.
+    backgroundBlurriness: 0.45,
     detectSun: false,
     sunYaw: 0,
     lightDir: new THREE.Vector3(-0.4, 0.6, 0.65),

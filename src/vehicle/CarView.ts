@@ -5,6 +5,47 @@ import type { CarTuning } from '../gameplay/economy';
 import { createGlow } from '../graphics/WorldTextures';
 
 let glowTex: THREE.Texture | null = null;
+
+interface Respray {
+  uPaint: { value: THREE.Color };
+  uRepaint: { value: number };
+}
+
+/**
+ * Single-texture liveries have no paint material to recolour, so the respray
+ * happens in the shader: strongly coloured texels take the new hue and keep
+ * their own brightness (shading, dirt and panel lines survive), while neutral
+ * ones (chrome, cream, rubber) are left alone.
+ */
+function resprayable(mat: THREE.MeshStandardMaterial): Respray {
+  const existing = mat.userData.respray as Respray | undefined;
+  if (existing) return existing;
+  const uniforms: Respray = { uPaint: { value: new THREE.Color(1, 1, 1) }, uRepaint: { value: 0 } };
+  const prev = mat.onBeforeCompile;
+  const prevKey = mat.customProgramCacheKey();
+  mat.onBeforeCompile = (shader, renderer) => {
+    prev.call(mat, shader, renderer);
+    Object.assign(shader.uniforms, uniforms);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uPaint;\nuniform float uRepaint;')
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+  {
+    float hi = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b));
+    float lo = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
+    float sat = hi > 0.0 ? (hi - lo) / hi : 0.0;
+    // Linear-space thresholds: vivid paint only, and nothing as dark as glass or rubber.
+    float mask = smoothstep(0.62, 0.8, sat) * smoothstep(0.05, 0.12, hi) * uRepaint;
+    diffuseColor.rgb = mix(diffuseColor.rgb, uPaint * (hi * 1.6 + 0.04), mask);
+  }`,
+      );
+  };
+  mat.customProgramCacheKey = () => prevKey + '|respray';
+  mat.needsUpdate = true;
+  mat.userData.respray = uniforms;
+  return uniforms;
+}
 import type { PlayerCar } from './PlayerCar';
 
 /** Damped spring for one body axis (roll or pitch). */
@@ -72,13 +113,27 @@ export class CarView {
     const m = model.materials;
     this.factory = { paint: m.paint.color.clone(), rim: m.rim.color.clone(), tint: spec.tint };
     // Texture-painted liveries never use the paint material, so they can't be resprayed.
-    model.root.traverse((o) => {
-      const mat = (o as THREE.Mesh).isMesh ? (o as THREE.Mesh).material : null;
-      if (mat && (Array.isArray(mat) ? mat.includes(m.paint) : mat === m.paint)) this.paintable = true;
+    let usesPaint = false;
+    const textured = new Set<THREE.MeshStandardMaterial>();
+    model.body.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      if (list.includes(m.paint)) usesPaint = true;
+      const classes = (mesh.userData.classes ?? []) as string[];
+      classes.forEach((cls, i) => {
+        const mat = list[Math.min(i, list.length - 1)] as THREE.MeshStandardMaterial;
+        if (cls === 'keep' && mat.isMeshStandardMaterial && mat.map) textured.add(mat);
+      });
     });
+    // No paint panels at all: the whole body is one painted texture, resprayed in its shader instead.
+    if (!usesPaint) this.livery = [...textured].map(resprayable);
+    this.paintable = usesPaint || this.livery.length > 0;
   }
 
-  /** The body uses the paint material (tuning can respray it). */
+  private livery: Respray[] = [];
+
+  /** Tuning can respray the body (paint panels, or a textured livery recoloured in its shader). */
   paintable = false;
 
   static async create(loader: VehicleLoader, spec: VehicleSpec): Promise<CarView> {
@@ -96,12 +151,16 @@ export class CarView {
   private applyGlow(): void {
     this.underglow.visible = this.glowColor > 0;
     // Daylight washes neon out; after dark it floods the tarmac.
-    this.underglow.material.color.setHex(this.glowColor).multiplyScalar(this.night ? 2.6 : 0.9);
+    this.underglow.material.color.setHex(this.glowColor).multiplyScalar(this.night ? 3.2 : 0.9);
   }
 
   applyTuning(t: CarTuning): void {
     const m = this.model.materials;
     m.setPaint(t.paint ?? this.factory.paint);
+    for (const l of this.livery) {
+      l.uRepaint.value = t.paint === undefined ? 0 : 1;
+      if (t.paint !== undefined) l.uPaint.value.setHex(t.paint);
+    }
     m.rim.color.set(t.rim ?? this.factory.rim);
     m.setFinish(t.finish);
     m.setTint(t.tint ?? this.factory.tint);
