@@ -19,7 +19,10 @@ export class EventBus<Events extends Record<string, unknown>> {
   }
 }
 
-export type LightingPreset = 'golden' | 'day' | 'night';
+export type LightingPreset = 'golden' | 'day' | 'night' | 'sakura' | 'neon';
+
+/** Presets lit by lamps rather than the sun: headlights, street lights and neon come on. */
+export const isNight = (p: LightingPreset): boolean => p === 'night' || p === 'neon';
 
 export interface GameEvents extends Record<string, unknown> {
   'preset:changed': LightingPreset;

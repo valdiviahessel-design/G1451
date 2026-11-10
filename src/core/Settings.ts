@@ -38,6 +38,8 @@ export interface Settings {
   fpsLimit: number;
   /** Visible road distance, m. */
   drawDistance: number;
+  /** Dynamic resolution: trades pixels for a steady 60 FPS. */
+  autoQuality: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -59,6 +61,7 @@ export const DEFAULT_SETTINGS: Settings = {
   resolution: 1,
   fpsLimit: 0,
   drawDistance: 1100,
+  autoQuality: true,
 };
 
 /** Fills gaps and drops invalid values from an older or tampered save. */
