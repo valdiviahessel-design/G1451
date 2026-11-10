@@ -17,7 +17,7 @@ Everything below is in the game now; details are in the sections that follow.
 - **Paint shop**: any colour (picker + hue slider) on top of the presets, six finishes (gloss, metallic, pearl, satin,
   matte, chrome) and neon underglow. The starter car, whose body is one painted texture, is resprayed in its shader.
 - **Nitro** (Space), **missions** with cash rewards, and run statistics (top speed, average speed, time).
-- **Frame rate**: about 8× fewer draw calls and 4.5× fewer triangles per frame than before, one post-processing pass
+- **Frame rate**: about 8× fewer draw calls and 4× fewer triangles per frame than before, one post-processing pass
   less, and a resolution governor that holds 60 FPS (see [Performance](#performance)).
 
 ## Run
@@ -164,11 +164,11 @@ Measured on the sunset map at 1280×720, `high` preset, before and after (`rende
 
 | | Before | After |
 | --- | --- | --- |
-| Draw calls | ≈ 1 780 | ≈ 210 |
-| Triangles | ≈ 625 000 | ≈ 136 000 |
+| Draw calls | ≈ 1 780 | ≈ 216 |
+| Triangles | ≈ 625 000 | ≈ 153 000 |
 | Full-screen post passes | bloom + lens + output | bloom + one finishing pass |
 
-The other four maps land between 205 and 230 draw calls. What got it there:
+The other four maps land between 210 and 227 draw calls and 150 000–157 000 triangles. What got it there:
 
 - **Traffic LOD.** Each traffic model is baked once into a single vertex-coloured mesh (`src/traffic/TrafficLod.ts`;
   the four detailed models are also decimated by vertex clustering). Cars more than ~105 m ahead or 28 m behind are

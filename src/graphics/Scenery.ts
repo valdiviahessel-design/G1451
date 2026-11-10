@@ -180,7 +180,9 @@ export class Scenery {
     private readonly mats: Materials,
     private readonly mobile: boolean,
   ) {
-    const plane = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE);
+    // Tessellated: depth interpolated across two 4 km triangles is too coarse near the camera and
+    // lets the ground poke through the road, 4 cm above it.
+    const plane = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, 80, 80);
     plane.rotateX(-Math.PI / 2);
     mats.grass.map!.repeat.set(TERRAIN_SIZE / GRASS_TILE, TERRAIN_SIZE / GRASS_TILE);
     this.terrain = new THREE.Mesh(plane, mats.grass);

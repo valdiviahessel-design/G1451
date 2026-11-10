@@ -154,7 +154,14 @@ export function skytreeGeometry(): THREE.BufferGeometry {
 
 /** Simple saloon seen across the median; faces +z, white body takes the instance colour. */
 export function simpleCarGeometry(): THREE.BufferGeometry {
-  const parts = [box(1.8, 0.62, 4.4, 0, 0.32, 0, 0xffffff), hip(1.62, 2.7, 0.56, 0, 0.94, -0.25, 0x10161d, 0.72), box(1.3, 0.05, 1.7, 0, 1.49, -0.25, 0xffffff)];
+  const parts = [
+    box(1.8, 0.5, 4.4, 0, 0.3, 0, 0xffffff),
+    // Bonnet and boot taper away from the cabin so the silhouette reads as a saloon, not a brick.
+    hip(1.78, 4.36, 0.2, 0, 0.8, 0, 0xffffff, 0.86),
+    hip(1.6, 2.5, 0.5, 0, 0.98, -0.3, 0x10161d, 0.7),
+    box(1.22, 0.05, 1.6, 0, 1.47, -0.3, 0xffffff),
+    box(1.5, 0.1, 0.08, 0, 0.45, 2.2, 0x1a1c1f),
+  ];
   for (const x of [-0.82, 0.82]) {
     for (const z of [-1.4, 1.4]) {
       const w = new THREE.CylinderGeometry(0.33, 0.33, 0.24, 10);

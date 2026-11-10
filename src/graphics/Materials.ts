@@ -100,6 +100,8 @@ export class Materials {
   private neonMat: THREE.MeshBasicMaterial | null = null;
   private adMat: THREE.MeshStandardMaterial | null = null;
   private night = false;
+  /** Foliage brightness per lighting preset (billboards have no self-shadowing to darken them). */
+  private treeTint = 1;
   /** Signs are created lazily per chunk, so they read the current preset's glow. */
   private signGlow = 0.04;
 
@@ -219,14 +221,16 @@ export class Materials {
         roughness: 1,
         metalness: 0,
       });
-      // Billboards carry an up normal; keep it on back faces too, or half of every tree goes dark.
+      // Billboards carry an up normal: keep it on back faces too (or half of every tree goes dark) and lean
+      // it toward the viewer, because a normal at right angles to the view turns the leaves into a mirror of the sky.
       m.onBeforeCompile = (shader) => {
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <normal_fragment_begin>',
-          'float faceDirection = 1.0;\n\tvec3 normal = normalize( vNormal );\n\tvec3 nonPerturbedNormal = normal;',
+          'float faceDirection = 1.0;\n\tvec3 normal = normalize( normalize( vNormal ) * 0.75 + normalize( vViewPosition ) * 0.65 );\n\tvec3 nonPerturbedNormal = normal;',
         );
       };
-      m.customProgramCacheKey = () => 'tree-billboard';
+      m.customProgramCacheKey = () => 'tree-billboard-v2';
+      m.color.setScalar(this.treeTint);
       this.trees.set(kind, m);
     }
     return m;
@@ -308,6 +312,8 @@ export class Materials {
     this.wall.emissiveIntensity = night ? 2.2 : 0;
     if (this.neonMat) this.neonMat.color.setScalar(night ? 2.6 : 1);
     if (this.adMat) this.adMat.emissiveIntensity = night ? 0.9 : 0.05;
+    this.treeTint = preset === 'golden' ? 0.85 : night ? 0.5 : 1;
+    for (const m of this.trees.values()) m.color.setScalar(this.treeTint);
     const k = night ? 0.55 : 1;
     if (this.theme === 'japan') this.grass.color.setRGB(0.74 * k, 1.12 * k, 0.6 * k);
     else if (this.theme === 'tokyo') this.grass.color.setRGB(0.1, 0.1, 0.13);
