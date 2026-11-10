@@ -1,63 +1,75 @@
-/** Inline SVG icons (currentColor), so the UI ships without image files. */
-const svg = (body: string, view = '0 0 24 24') =>
-  `<svg viewBox="${view}" aria-hidden="true" fill="currentColor">${body}</svg>`;
+/** Inline SVG icons (currentColor), so the UI ships without image files. One style: 24 px grid, 2 px round strokes. */
+const svg = (body: string) =>
+  `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+/** Solid shape inside a stroke icon. */
+const SOLID = 'fill="currentColor" stroke="none"';
 
 export const ICONS = {
-  user: svg('<circle cx="12" cy="8.2" r="4.4"/><path d="M3.6 21c.6-4.6 4-7.4 8.4-7.4s7.8 2.8 8.4 7.4z"/>'),
-  cart: svg(
-    '<path d="M2 3.5h3.1l2.6 11.2h10.8l2.3-8.2H7.2" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linejoin="round"/><circle cx="9.3" cy="19" r="1.9"/><circle cx="16.9" cy="19" r="1.9"/>',
-  ),
+  user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 20.5c1.2-3.8 4.3-5.5 8-5.5s6.800 1.700 8 5.500"/>'),
+  cart: svg('<path d="M2.500 3.500h2.700l2.400 11h10.600l2.300-7.800H6.400"/><circle cx="9" cy="19" r="1.400"/><circle cx="17" cy="19" r="1.400"/>'),
   gear: svg(
-    '<path d="M10.3 2h3.4l.5 2.6c.7.2 1.3.5 1.9.9l2.4-1.2 2.4 2.4-1.2 2.4c.4.6.7 1.2.9 1.9l2.6.5v3.4l-2.6.5c-.2.7-.5 1.3-.9 1.9l1.2 2.4-2.4 2.4-2.4-1.2c-.6.4-1.2.7-1.9.9l-.5 2.6h-3.4l-.5-2.6c-.7-.2-1.3-.5-1.9-.9l-2.4 1.2-2.4-2.4 1.2-2.4c-.4-.6-.7-1.2-.9-1.9L2 13.7v-3.4l2.6-.5c.2-.7.5-1.3.9-1.9L4.3 5.5l2.4-2.4 2.4 1.2c.6-.4 1.2-.7 1.9-.9zM12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2z"/>',
+    '<path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h9M19 18h1"/><circle cx="15" cy="6" r="2.200"/><circle cx="9" cy="12" r="2.200"/><circle cx="16" cy="18" r="2.200"/>',
   ),
-  cash: svg(
-    '<g transform="rotate(-18 12 12)"><rect x="2" y="6" width="20" height="12" rx="1.6" fill="#3f9c35"/><rect x="3.3" y="7.3" width="17.4" height="9.4" rx="1" fill="none" stroke="#bff0a6" stroke-width="1"/><circle cx="12" cy="12" r="3.1" fill="#bff0a6"/><text x="12" y="14.3" font-size="5.6" text-anchor="middle" fill="#2e7a25" font-weight="700" font-family="Arial">$</text></g>',
-  ),
-  plus: svg('<path d="M10.4 3h3.2v7.4H21v3.2h-7.4V21h-3.2v-7.4H3v-3.2h7.4z"/>'),
-  video: svg(
-    '<rect x="1.5" y="4" width="21" height="16" rx="2.4" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M1.5 8h3M1.5 12h3M1.5 16h3M19.5 8h3M19.5 12h3M19.5 16h3" stroke="currentColor" stroke-width="1.6"/><path d="M9.5 8.5v7l6-3.5z"/>',
-  ),
-  left: svg('<path d="M15.6 2.5 6 12l9.6 9.5 2.4-2.4L10.8 12 18 4.9z"/>'),
-  right: svg('<path d="M8.4 2.5 18 12l-9.6 9.5L6 19.1 13.2 12 6 4.9z"/>'),
-  speedo: svg(
-    '<path d="M12 4a10 10 0 0 0-10 10c0 2 .6 3.9 1.6 5.4l1.7-1.1A8 8 0 1 1 18.7 18.3l1.7 1.1A10 10 0 0 0 12 4z"/><path d="m12.9 15.1 4.6-6.6-6.6 4.6a1.6 1.6 0 1 0 2 2z"/><path d="M12 6.3v2M5.8 9l1.4 1.2M18.2 9l-1.4 1.2M4.2 14h2M17.8 14h2" stroke="currentColor" stroke-width="1.5"/>',
-  ),
-  weight: svg(
-    '<path d="M12 2.5a3 3 0 0 0-2.9 3.8H6.5L3 21.5h18L17.5 6.3h-2.6A3 3 0 0 0 12 2.5zm0 1.8a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/><text x="12" y="17.6" font-size="6.4" text-anchor="middle" fill="#2a2c30" font-weight="700" font-family="Arial">KG</text>',
-  ),
-  power: svg('<path d="M13.5 1.8 4 13.6h6.1L9 22.2l10-12.4h-6.3z"/>'),
-  timer: svg(
-    '<path d="M9 1.5h6v2.2H9z"/><path d="M12 4.6a8.6 8.6 0 1 0 0 17.2 8.6 8.6 0 0 0 0-17.2zm0 2.2a6.4 6.4 0 1 1 0 12.8 6.4 6.4 0 0 1 0-12.8z"/><path d="M11 8.4h2v5.4h-2z"/>',
-  ),
+  cash: svg('<rect x="2.500" y="6" width="19" height="12" rx="2.600"/><circle cx="12" cy="12" r="2.600"/><path d="M6.200 10v4M17.800 10v4"/>'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  video: svg(`<rect x="2.500" y="5" width="19" height="14" rx="3.200"/><path d="M10.200 9v6l5-3z" ${SOLID}/>`),
+  left: svg('<path d="m15 5-7 7 7 7"/>'),
+  right: svg('<path d="m9 5 7 7-7 7"/>'),
+  back: svg('<path d="M20 12H5M11 6l-6 6 6 6"/>'),
+  arrow: svg('<path d="M4 12h15M13 6l6 6-6 6"/>'),
+  down: svg('<path d="m6 9 6 6 6-6"/>'),
+  speedo: svg(`<path d="M4.200 17.500a9 9 0 1 1 15.600 0"/><path d="m12 13 4-5"/><circle cx="12" cy="13" r="1.400" ${SOLID}/>`),
+  trend: svg('<path d="M3.500 17 9 11.500l3.500 3.500 8-8M15 7h5.500v5.500"/>'),
+  weight: svg('<circle cx="12" cy="5.500" r="2.200"/><path d="M8 8.500h8l3.200 11.500H4.800z"/>'),
+  power: svg('<path d="M13 2.500 5 13.500h6l-1 8 8-11h-6z"/>'),
+  timer: svg('<circle cx="12" cy="13.500" r="7.500"/><path d="M12 9.500v4l2.500 2M9.500 2.500h5"/>'),
+  clock: svg('<circle cx="12" cy="12" r="8.500"/><path d="M12 7.500V12l3 2"/>'),
   drive: svg(
-    '<rect x="4" y="2.5" width="4.5" height="6.5" rx="1"/><rect x="15.5" y="2.5" width="4.5" height="6.5" rx="1"/><rect x="4" y="15" width="4.5" height="6.5" rx="1"/><rect x="15.5" y="15" width="4.5" height="6.5" rx="1"/><path d="M8.5 5.7h7M8.5 18.3h7M12 5.7v12.6" stroke="currentColor" stroke-width="1.8" fill="none"/>',
+    '<rect x="3.500" y="3" width="4" height="6" rx="1.200"/><rect x="16.500" y="3" width="4" height="6" rx="1.200"/><rect x="3.500" y="15" width="4" height="6" rx="1.200"/><rect x="16.500" y="15" width="4" height="6" rx="1.200"/><path d="M7.500 6h9M7.500 18h9M12 6v12"/>',
   ),
-  flag: svg(
-    '<path d="M4 2h2v20H4z"/><path d="M6 3h14v10H6z" fill="#fff"/><path d="M6 3h3.5v2.5H6zM13 3h3.5v2.5H13zM9.5 5.5H13V8H9.5zM16.5 5.5H20V8h-3.5zM6 8h3.5v2.5H6zM13 8h3.5v2.5H13zM9.5 10.5H13V13H9.5zM16.5 10.5H20V13h-3.5z"/>',
-  ),
+  flag: svg('<path d="M5 21V4M5 4.500c4-2 6 2 10 0 1.400-.700 2.600-.900 4-.500v9c-1.400-.400-2.600-.200-4 .500-4 2-6-2-10 0"/>'),
   wrench: svg(
-    '<path d="M20.7 6.2a5.6 5.6 0 0 1-7.3 6.9l-7 7a2.1 2.1 0 0 1-3-3l7-7a5.6 5.6 0 0 1 6.9-7.3l-3.3 3.3.6 2.9 2.9.6z"/>',
+    '<path d="M15.200 6.300a4.600 4.600 0 0 0-6.100 5.700l-5.300 5.300a2 2 0 0 0 2.900 2.900l5.300-5.300a4.600 4.600 0 0 0 5.700-6.100l-2.900 2.900-2.500-.600-.600-2.500z"/>',
   ),
-  paint: svg(
-    '<path d="M3.5 13.5c0-2 1.6-3.2 3.3-3.9l2.6-1.1 2-3.4c.4-.6 1-1 1.7-1h4.2c.9 0 1.6.6 1.9 1.4l1.1 3.4c1.1.4 1.7 1.4 1.7 2.6v2.1c0 .7-.5 1.2-1.2 1.2h-1a2.7 2.7 0 0 0-5.3 0H9.4a2.7 2.7 0 0 0-5.3 0H3.5zm8-3.6h4.9l-.8-3.2h-2.4z"/><circle cx="6.8" cy="15.6" r="1.8"/><circle cx="17.2" cy="15.6" r="1.8"/><path d="M5 19.5c2-.7 4-.7 6 0s4 .7 6 0" stroke="currentColor" stroke-width="1.5" fill="none"/>',
-  ),
+  paint: svg('<path d="M12 3s6 6.200 6 10.500a6 6 0 0 1-12 0C6 9.200 12 3 12 3z"/><path d="M9.500 14a2.600 2.600 0 0 0 2.500 2.600"/>'),
   rim: svg(
-    '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2.2a7.8 7.8 0 1 1 0 15.6 7.8 7.8 0 0 1 0-15.6z"/><circle cx="12" cy="12" r="2.2"/><path d="M12 4.6v5.2M12 14.2v5.2M4.6 12h5.2M14.2 12h5.2M6.8 6.8l3.6 3.6M13.6 13.6l3.6 3.6M17.2 6.8l-3.6 3.6M10.4 13.6l-3.6 3.6" stroke="currentColor" stroke-width="1.8"/>',
+    '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.200"/><path d="M12 3v6.800M14.100 11.300l6.500-2.100M13.300 13.800l4 5.500M10.700 13.800l-4 5.500M9.900 11.300 3.400 9.200"/>',
   ),
-  tint: svg(
-    '<path d="M2.5 15.5c0-1.4.9-2.4 2.2-2.8l2.3-.7 3.3-4.4c.5-.6 1.2-1 2-1h4.4c.9 0 1.7.5 2 1.3l1.6 3.8c1.1.3 1.8 1.2 1.8 2.3v1.5H2.5z"/><path d="M9 11.8 11.4 8.6c.2-.2.5-.4.8-.4h1.4l.7 3.6z" fill="#1d1f22"/><path d="M15.3 8.2h1.2c.4 0 .7.2.9.6l1.3 3h-2.7z" fill="#1d1f22"/><path d="M3 19h18" stroke="currentColor" stroke-width="1.6"/>',
+  tint: svg('<path d="M3 16.500 7.500 8.600c.5-.9 1.400-1.400 2.400-1.400h7.300a2.800 2.800 0 0 1 2.800 2.800v6.500z"/><path d="M12 7.500v9"/>'),
+  suspension: svg('<path d="M8 3h8M8 21h8M8.500 6.500l7 2-7 2.500 7 2.500-7 2.500 7 1.500"/>'),
+  neon: svg(
+    '<path d="M5 12.500 6.700 8.600A2.500 2.500 0 0 1 9 7h6a2.500 2.500 0 0 1 2.300 1.600l1.700 3.900"/><rect x="3" y="12.500" width="18" height="4" rx="1.600"/><path d="M5.500 20.500h2M11 20.500h2M16.500 20.500h2"/>',
   ),
-  suspension: svg(
-    '<path d="M8 2h8v2.4H8zM8 19.6h8V22H8z"/><path d="M8.5 6.2l7 2.2-7 2.2 7 2.2-7 2.2 7 2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 4.4v1.8M12 17.4v2.2" stroke="currentColor" stroke-width="2"/>',
+  check: svg('<path d="m5 12.500 4.500 4.500L19 7.500"/>'),
+  lock: svg('<rect x="5" y="10.500" width="14" height="10" rx="2.600"/><path d="M8.500 10.500v-3a3.500 3.500 0 0 1 7 0v3"/>'),
+  pause: svg(`<rect x="6.500" y="5" width="3.800" height="14" rx="1.300" ${SOLID}/><rect x="13.700" y="5" width="3.800" height="14" rx="1.300" ${SOLID}/>`),
+  play: svg(`<path d="M8 5.300v13.400a.8.8 0 0 0 1.200.7l10.800-6.700a.8.8 0 0 0 0-1.400L9.200 4.600a.8.8 0 0 0-1.200.7z" ${SOLID}/>`),
+  restart: svg('<path d="M4.500 12a7.500 7.500 0 1 0 2.300-5.400"/><path d="M4.500 4.500V9H9"/>'),
+  exit: svg('<path d="M10 4H6.500A2.500 2.500 0 0 0 4 6.500v11A2.500 2.500 0 0 0 6.500 20H10M15 8l4 4-4 4M19 12H9"/>'),
+  off: svg('<circle cx="12" cy="12" r="8.500"/><path d="m6 6 12 12"/>'),
+  garage: svg(
+    '<path d="m5 11 1.600-4.300A2.500 2.500 0 0 1 9 5h6a2.500 2.500 0 0 1 2.400 1.700L19 11"/><rect x="3" y="11" width="18" height="6" rx="2"/><path d="M6 17v2.500M18 17v2.500M7 14h1.500M15.500 14H17"/>',
   ),
-  check: svg('<path d="m3 12.6 2.6-2.6 4.4 4.4 8.4-8.4 2.6 2.6-11 11z"/>'),
-  lock: svg('<path d="M12 2a5 5 0 0 0-5 5v3H5.5A1.5 1.5 0 0 0 4 11.5v9A1.5 1.5 0 0 0 5.5 22h13a1.5 1.5 0 0 0 1.5-1.5v-9a1.5 1.5 0 0 0-1.5-1.5H17V7a5 5 0 0 0-5-5zm0 2.4A2.6 2.6 0 0 1 14.6 7v3H9.4V7A2.6 2.6 0 0 1 12 4.4zm0 9.1a1.8 1.8 0 0 1 1 3.3V19h-2v-2.2a1.8 1.8 0 0 1 1-3.3z"/>'),
-  pause: svg('<path d="M6 4h4.2v16H6zM13.8 4H18v16h-4.2z"/>'),
-  play: svg('<path d="M7 3.5v17l14-8.5z"/>'),
-  camera: svg(
-    '<path d="M8.5 4h7l1.6 2.5H20a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2h2.9zM12 9a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/>',
+  gamepad: svg('<rect x="2.500" y="7" width="19" height="10.500" rx="5.200"/><path d="M7.500 10.500v3.500M5.800 12.200h3.400M15 11.200h.01M18 13.300h.01"/>'),
+  road: svg('<path d="M8 3 4.500 21M16 3l3.500 18M12 4v3M12 10.500v3M12 17v3.500"/>'),
+  monitor: svg('<rect x="3" y="4.500" width="18" height="12" rx="2.200"/><path d="M8.500 20h7M12 16.500V20"/>'),
+  trophy: svg(
+    '<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H4.500v1.200A3.600 3.600 0 0 0 8 10.800M16 6h3.500v1.200a3.600 3.600 0 0 1-3.500 3.600M12 13v4M8.500 20.500h7M9.500 17h5v3.500h-5z"/>',
   ),
-  road: svg('<path d="M9 2h2l-1.3 20H5zM13 2h2l4 20h-4.7z"/><path d="M11.3 4h1.4l.2 3h-1.8zM11 10h2l.2 4h-2.4zM10.7 17h2.6l.3 4h-3.2z"/>'),
+  target: svg(`<circle cx="12" cy="12" r="8.500"/><circle cx="12" cy="12" r="4.500"/><circle cx="12" cy="12" r="1.200" ${SOLID}/>`),
+  near: svg('<path d="M7 20V6M4 9l3-3 3 3M17 4v14M14 15l3 3 3-3"/>'),
+  flame: svg('<path d="M12 2.500c.5 3.500 5.500 5.500 5.500 11a5.500 5.500 0 0 1-11 0c0-2 .8-3.400 1.800-4.500.3 1.500 1 2.300 1.900 2.700C9.800 8.500 10.500 5 12 2.500z"/>'),
+  alert: svg('<path d="M12 4 2.800 19.500h18.400z"/><path d="M12 10v4.500M12 17.200v.01"/>'),
+  pin: svg('<path d="M12 21s7-6.200 7-11.500a7 7 0 0 0-14 0C5 14.800 12 21 12 21z"/><circle cx="12" cy="9.500" r="2.500"/>'),
+  sun: svg(
+    '<circle cx="12" cy="12" r="4"/><path d="M12 2.500v2M12 19.500v2M2.500 12h2M19.500 12h2M5.300 5.300l1.400 1.400M17.300 17.300l1.400 1.400M5.300 18.700l1.400-1.400M17.300 6.700l1.400-1.400"/>',
+  ),
+  sunset: svg('<path d="M3 18h18M6.500 21.500h11M7 18a5 5 0 0 1 10 0M12 6.500v3M4.800 10.800l1.800 1.800M19.200 10.800l-1.800 1.800"/>'),
+  moon: svg('<path d="M20 14.500A8.500 8.500 0 1 1 9.500 4a7 7 0 0 0 10.500 10.500z"/>'),
+  rain: svg('<path d="M7 15a4.500 4.500 0 1 1 1.200-8.800A5.500 5.500 0 0 1 18.500 8a3.500 3.500 0 0 1-.5 7z"/><path d="m8.500 18-1 2.500M12.500 18l-1 2.500M16.500 18l-1 2.500"/>'),
+  petal: svg(
+    `<circle cx="12" cy="12" r="1.500" ${SOLID}/><path d="M12 10.200c-2-1.700-2-4.800 0-6.700 2 1.900 2 5 0 6.700zM13.700 11.400c1-2.400 3.900-3.400 6.300-2-1.200 2.500-4.100 3.500-6.300 2zM13.100 13.500c2.600 0 4.500 2.400 3.900 5.100-2.700-.3-4.600-2.700-3.900-5.100zM10.900 13.500c.7 2.400-1.200 4.800-3.900 5.100-.600-2.700 1.300-5.100 3.900-5.100zM10.300 11.400c-2.200 1.500-5.100.5-6.300-2 2.400-1.400 5.300-.4 6.300 2z"/>`,
+  ),
 };
 
 /** Drivetrain diagram: which axle is driven (filled wheels). */
@@ -65,10 +77,7 @@ export function driveIcon(layout: 'FWD' | 'RWD' | 'AWD' | 'stock'): string {
   const front = layout === 'FWD' || layout === 'AWD';
   const rear = layout === 'RWD' || layout === 'AWD';
   const wheel = (x: number, y: number, on: boolean) =>
-    `<rect x="${x}" y="${y}" width="4.6" height="6.8" rx="1.2" ${on ? '' : 'fill="none" stroke="currentColor" stroke-width="1.5"'}/>`;
-  if (layout === 'stock') return svg('<text x="12" y="16.5" font-size="11" text-anchor="middle" font-weight="700" font-family="Arial">A</text>');
-  return svg(
-    `${wheel(3.2, 2, front)}${wheel(16.2, 2, front)}${wheel(3.2, 15.2, rear)}${wheel(16.2, 15.2, rear)}` +
-      '<path d="M7.8 5.4h8.4M7.8 18.6h8.4M12 5.4v13.2" stroke="currentColor" stroke-width="2" fill="none"/>',
-  );
+    `<rect x="${x}" y="${y}" width="4" height="6" rx="1.200" ${on ? 'fill="currentColor"' : 'opacity="0.55"'}/>`;
+  if (layout === 'stock') return svg(`<text x="12" y="16.500" font-size="12" text-anchor="middle" font-weight="800" ${SOLID}>A</text>`);
+  return svg(`${wheel(3.5, 3, front)}${wheel(16.5, 3, front)}${wheel(3.5, 15, rear)}${wheel(16.5, 15, rear)}<path d="M7.500 6h9M7.500 18h9M12 6v12"/>`);
 }
