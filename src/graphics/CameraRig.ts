@@ -55,6 +55,9 @@ export class CameraRig {
   /** 0 = rigid follow, 1 = loose, cinematic lag. */
   inertia = 0.5;
 
+  /** Nitro burn 0..1: widens the view and pulls the camera back. */
+  boost = 0;
+
   /** Slow orbit around the car behind the main menu. */
   showcase = false;
 
@@ -87,13 +90,13 @@ export class CameraRig {
     const z = -(t.s - origin);
     const sin = Math.sin(this.lagPsi);
     const cos = Math.cos(this.lagPsi);
-    const jitter = speed01 * speed01 * 0.01 + this.shake * 0.12;
+    const jitter = speed01 * speed01 * 0.01 + this.shake * 0.12 + this.boost * 0.012;
     const jx = Math.sin(this.time * 31) * jitter;
     const jy = Math.sin(this.time * 23.7) * jitter * 0.6;
 
     if (this.mode !== 'bumper') {
       const far = this.mode === 'far';
-      const back = (far ? 8.4 : 5.6) + t.length * 0.25 + this.pull;
+      const back = (far ? 8.4 : 5.6) + t.length * 0.25 + this.pull + this.boost * 0.7;
       const up = (far ? 2.35 : 1.45) + t.height * 0.32;
       this.pos.set(this.lagX - sin * back + jx, up + jy, z + cos * back);
       this.look.set(t.x + sin * 7, far ? 1.1 : 0.95, z - cos * 7);
@@ -126,7 +129,7 @@ export class CameraRig {
     this.camera.rotateZ(this.roll * e);
 
     const base = this.mode === 'bumper' ? 66 : 58;
-    const targetFov = THREE.MathUtils.lerp(48, base + 22 * Math.pow(speed01, 1.6), e);
+    const targetFov = THREE.MathUtils.lerp(48, base + 22 * Math.pow(speed01, 1.6) + 7 * this.boost, e);
     this.fov += (targetFov - this.fov) * damp(3, dt);
     this.camera.fov = this.fov;
     this.camera.updateProjectionMatrix();
