@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { Sky } from 'three/addons/objects/Sky.js';
-import type { LightingPreset } from '../core/EventBus';
+import { isNight, type LightingPreset } from '../core/EventBus';
 
 interface PresetConfig {
   hdri: string;
@@ -90,6 +90,46 @@ const PRESETS: Record<LightingPreset, PresetConfig> = {
     maxRadiance: 4,
     fallbackSky: { elevation: -2, azimuth: 180, turbidity: 2, rayleigh: 0.3 },
   },
+  // Spring morning in Japan: the midday sky, with a lower, warmer sun raking through the blossom.
+  sakura: {
+    hdri: 'assets/hdri/day_highway.hdr',
+    exposure: 0.66,
+    envIntensity: 1.0,
+    backgroundIntensity: 0.72,
+    backgroundBlurriness: 0.0,
+    detectSun: true,
+    sunYaw: Math.atan2(-0.55, 0.85),
+    lightDir: new THREE.Vector3(0.7, 0.5, -0.5),
+    envRotation: 0,
+    sunColor: new THREE.Color(1.0, 0.9, 0.84),
+    sunIntensity: 3.4,
+    minSunElevation: THREE.MathUtils.degToRad(32),
+    fogDensity: 0.00058,
+    fogLuminance: 0.5,
+    fogTint: new THREE.Color(1.08, 0.94, 1.0),
+    maxRadiance: 40,
+    fallbackSky: { elevation: 35, azimuth: 120, turbidity: 3, rayleigh: 1.4 },
+  },
+  // Tokyo after dark: the night sky under a magenta city haze.
+  neon: {
+    hdri: 'assets/hdri/night_city.hdr',
+    exposure: 0.95,
+    envIntensity: 0.6,
+    backgroundIntensity: 0.5,
+    backgroundBlurriness: 0.0,
+    detectSun: false,
+    sunYaw: 0,
+    lightDir: new THREE.Vector3(-0.4, 0.6, 0.65),
+    envRotation: 2.2,
+    sunColor: new THREE.Color(0.8, 0.55, 1.0),
+    sunIntensity: 0.4,
+    minSunElevation: 0,
+    fogDensity: 0.0011,
+    fogLuminance: 0.02,
+    fogTint: new THREE.Color(1.0, 0.5, 1.15),
+    maxRadiance: 4,
+    fallbackSky: { elevation: -2, azimuth: 180, turbidity: 2, rayleigh: 0.3 },
+  },
 };
 
 interface LoadedEnv {
@@ -108,7 +148,8 @@ export class Environment {
   readonly sun: THREE.DirectionalLight;
   readonly hemi: THREE.HemisphereLight;
   preset: LightingPreset = 'golden';
-  private cache = new Map<LightingPreset, Promise<LoadedEnv>>();
+  /** Keyed by HDRI file: presets that share a sky share its texture. */
+  private cache = new Map<string, Promise<LoadedEnv>>();
   private sunDirWorld = new THREE.Vector3(0, 1, 0);
   private readonly shadowExtent: number;
   private readonly loader = new HDRLoader();
@@ -147,9 +188,9 @@ export class Environment {
   }
 
   private load(preset: LightingPreset): Promise<LoadedEnv> {
-    let p = this.cache.get(preset);
+    const cfg = PRESETS[preset];
+    let p = this.cache.get(cfg.hdri);
     if (!p) {
-      const cfg = PRESETS[preset];
       p = this.loader
         .loadAsync(import.meta.env.BASE_URL + cfg.hdri)
         .then((tex): LoadedEnv => {
@@ -173,7 +214,7 @@ export class Environment {
           u.sunPosition.value.copy(dir);
           return { texture: null, sky, sunDir: dir, horizon: new THREE.Color(0.9, 0.6, 0.4) };
         });
-      this.cache.set(preset, p);
+      this.cache.set(cfg.hdri, p);
     }
     return p;
   }
@@ -224,7 +265,7 @@ export class Environment {
       scene.backgroundRotation.set(0, 0, 0);
       scene.environmentRotation.set(0, 0, 0);
       sunDir = env.sunDir!.clone();
-      this.hemi.intensity = preset === 'night' ? 0.15 : 0.3;
+      this.hemi.intensity = isNight(preset) ? 0.15 : 0.3;
     }
 
     scene.backgroundIntensity = cfg.backgroundIntensity;
@@ -282,6 +323,15 @@ export class Environment {
     this.sun.target.position.copy(_tmp);
     this.sun.position.copy(_tmp).addScaledVector(this.sunDirWorld, 200);
     this.sun.target.updateMatrixWorld();
+  }
+
+  get fogColor(): THREE.Color {
+    return (this.scene.fog as THREE.FogExp2).color;
+  }
+
+  /** Current fog density (for effects that fade by hand, e.g. additive glows). */
+  get fogAmount(): number {
+    return (this.scene.fog as THREE.FogExp2).density;
   }
 
   get sunDirection(): THREE.Vector3 {

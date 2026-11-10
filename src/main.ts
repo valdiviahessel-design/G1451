@@ -4,20 +4,26 @@ import { PLAYER_CARS, findPlayerCar, type VehicleSpec } from './assets/vehicles'
 import { creditFor } from './assets/credits';
 import { VehicleLoader } from './assets/VehicleLoader';
 import { AudioEngine } from './audio/AudioEngine';
-import { events, type LightingPreset } from './core/EventBus';
+import { AdaptiveQuality } from './core/AdaptiveQuality';
+import { events, isNight } from './core/EventBus';
 import { GameLoop } from './core/GameLoop';
 import { Input } from './core/Input';
 import { DENSITY_SCALE, PACE_SCALE, sanitizeSettings, type Quality, type Settings } from './core/Settings';
 import { AD_REWARD, CAR_PRICES, START_MONEY, priceOf, runPayout, type CarTuning } from './gameplay/economy';
 import { MAPS, findMap, type MapDef } from './gameplay/maps';
+import { Missions, type MissionState } from './gameplay/Missions';
 import { Scoring, resolveTrafficContacts } from './gameplay/Scoring';
 import { CameraRig } from './graphics/CameraRig';
 import { Environment } from './graphics/Environment';
+import { GlowSprites } from './graphics/GlowSprites';
 import { Materials } from './graphics/Materials';
 import { PostFX } from './graphics/PostFX';
 import { Scenery } from './graphics/Scenery';
 import { Showroom } from './graphics/Showroom';
 import { StreetLightPool } from './graphics/StreetLightPool';
+import { Weather } from './graphics/Weather';
+import { damp } from './core/math';
+import { Oncoming } from './world/Oncoming';
 import { RoadStreamer } from './road/RoadStreamer';
 import { initPlatform } from './platform/YandexPlatform';
 import { TrafficSystem, type PlayerState } from './traffic/TrafficSystem';
@@ -61,7 +67,13 @@ interface SaveData {
   tuning?: Record<string, CarTuning>;
   settings?: Partial<Settings>;
   name?: string;
+  missions?: MissionState[];
 }
+
+/** Nitro: seconds of burn in a full tank, and what refills it. */
+const NITRO_BURN = 3.6;
+const NITRO_GAIN = { near: 0.12, crazy: 0.2, squeeze: 0.34 } as const;
+const NITRO_REGEN = 0.018;
 
 /** 0–100 km/h time from the real physics, for the garage card. */
 function measureCar(spec: VehicleSpec, layout: RoadStreamer['layout']): CarStats {
@@ -137,6 +149,7 @@ async function boot(): Promise<void> {
     save.owned = [...owned];
     save.tuning = tunings;
     save.settings = settings;
+    save.missions = missions.state;
     delete save.volume;
     void platform.saveData(save);
   };
@@ -156,6 +169,10 @@ async function boot(): Promise<void> {
   // 4 street lamps + the player's beam: more makes the clear-coat road shader too heavy
   // (it stopped rasterising under SwiftShader at 8 spot lights).
   const lights = new StreetLightPool(scene, road, 4);
+  const glows = new GlowSprites(mats.glow, mobile ? 128 : 256);
+  scene.add(glows.mesh);
+  const oncoming = new Oncoming(scene, mats.props, mobile);
+  const weather = new Weather(scene, mobile);
 
   const rig = new CameraRig(innerWidth / innerHeight, params.get('intro') === '0');
   rig.mode = (params.get('cam') as Settings['camera'] | null) ?? settings.camera;
@@ -179,14 +196,26 @@ async function boot(): Promise<void> {
 
   // ---------------------------------------------------------------- settings
   let loop: GameLoop | null = null;
-  const applyGraphics = () => {
+  const applyResolution = () => {
     const q = QUALITY[settings.quality];
-    const pr = Math.min(devicePixelRatio, mobile ? Math.min(q.pr, 1.5) : q.pr) * settings.resolution;
+    const pr = Math.min(devicePixelRatio, mobile ? Math.min(q.pr, 1.5) : q.pr) * settings.resolution * adaptive.scale;
     renderer.setPixelRatio(pr);
     renderer.setSize(innerWidth, innerHeight);
     post.setSize(innerWidth, innerHeight);
+  };
+  // ?aq=0 pins the resolution (benchmarks, automated screenshots on software GL).
+  const adaptive = new AdaptiveQuality(applyResolution);
+  const adaptiveAllowed = params.get('aq') !== '0' && !navigator.webdriver;
+  const applyGraphics = () => {
+    const q = QUALITY[settings.quality];
+    adaptive.enabled = settings.autoQuality && adaptiveAllowed;
+    adaptive.fpsLimit = settings.fpsLimit;
+    adaptive.restore();
+    applyResolution();
     post.setQuality(mobile ? 0 : q.samples, q.bloom, q.lens);
     env.setShadowSize(mobile ? Math.min(q.shadow, 1024) : q.shadow);
+    trafficView.setShadows(q.shadow > 0);
+    weather.set(map.weather, settings.quality !== 'low');
   };
   const applySettings = () => {
     audio.setVolume(settings.volume);
@@ -204,20 +233,31 @@ async function boot(): Promise<void> {
     env.setDrawDistance(settings.drawDistance);
     trafficView.setGhost(settings.ghostTraffic);
     if (loop) loop.fpsLimit = settings.fpsLimit;
+    adaptive.fpsLimit = settings.fpsLimit;
   };
   applyGraphics();
   applySettings();
 
-  const applyPreset = async (preset: LightingPreset) => {
-    await env.apply(preset);
-    mats.applyPreset(preset);
-    post.applyPreset(preset);
-    const night = preset === 'night';
+  /** Dresses the world for a map: road furniture, lighting, scenery and weather. */
+  const applyMap = async (m: MapDef) => {
+    const rebuild = mats.theme !== m.theme || !worldReady;
+    mats.applyTheme(m.theme);
+    await env.apply(m.preset);
+    mats.applyPreset(m.preset);
+    post.applyPreset(m.preset);
+    if (rebuild) road.rebuild(car.s);
+    scenery.setTheme(m.theme, m.preset, env.fogColor, env.sunDirection, car.s);
+    weather.set(m.weather, settings.quality !== 'low');
+    oncoming.reset(car.s, road.viewAhead);
+    worldReady = true;
+    const night = isNight(m.preset);
     lights.setEnabled(night);
+    lights.setColor(m.theme === 'tokyo' ? 0xcfe6ff : 0xffd2a0);
     if (mode !== 'lobby') view.setNight(night);
     trafficView.setNight(night);
-    events.emit('preset:changed', preset);
+    events.emit('preset:changed', m.preset);
   };
+  let worldReady = false;
 
   // ---------------------------------------------------------------- traffic
   const pstate: PlayerState = { s: 0, x: 0, speed: 0, psi: 0, length: car.length, width: car.width };
@@ -258,7 +298,7 @@ async function boot(): Promise<void> {
   };
   const toRoad = () => {
     scene.add(view.model.root);
-    view.setNight(env.preset === 'night');
+    view.setNight(isNight(env.preset));
   };
   const showCar = async () => {
     hud.setCar(spec.name, spec.tagline);
@@ -310,7 +350,9 @@ async function boot(): Promise<void> {
     map = next;
     save.map = map.id;
     persist();
-    await applyPreset(map.preset);
+    await applyMap(map);
+    // New scenery brings new shader programs: compile them behind the menu, not mid-run.
+    await renderer.compileAsync(scene, rig.camera);
   };
 
   // Optional start offset (?s=meters) is handy for jumping straight to a pocket.
@@ -321,7 +363,7 @@ async function boot(): Promise<void> {
     world.position.z = origin;
     road.prime(startS);
   }
-  await applyPreset(map.preset);
+  await applyMap(map);
   resetTraffic();
 
   const cameraTarget = () => ({
@@ -339,7 +381,7 @@ async function boot(): Promise<void> {
   view.applyTuning(tunings[spec.id] ?? {});
   scene.add(view.model.root);
   view.update(0.016, car, origin);
-  trafficView.update(0.016, traffic.cars, origin);
+  trafficView.update(0.016, traffic.cars, origin, car.s);
   rig.update(0.016, cameraTarget(), origin);
   const warm = trafficView.warm();
   scene.add(warm);
@@ -362,15 +404,30 @@ async function boot(): Promise<void> {
   let wreckT = 0;
   let crashed = false;
   let testDrive = false;
+  /** Nitro tank 0..1 and whether it is burning. */
+  let nitro = 0.5;
+  let boosting = false;
+  const missions = new Missions(save.missions);
+  /** Per-run figures for the results card and the missions. */
+  const run = { time: 0, topSpeed: 0, lastS: 0, cleanFrom: 0 };
   /** Seconds each aid lamp stays lit after the aid last intervened. */
   const aidT = { abs: 0, esp: 0, tcs: 0 };
 
   scoring.onEvent = (e) => {
     if (mode !== 'play') return;
     hud.event(e);
-    if (e.kind === 'near' || e.kind === 'crazy') audio.nearMiss(e.kind === 'crazy', 0);
-    else if (e.kind === 'squeeze') audio.squeeze();
-    else if (e.kind === 'combo-lost' || e.kind === 'crash') audio.comboLost();
+    if (e.kind === 'near' || e.kind === 'crazy') {
+      audio.nearMiss(e.kind === 'crazy', 0);
+      nitro = Math.min(1, nitro + NITRO_GAIN[e.kind]);
+      missions.track({ near: 1 });
+    } else if (e.kind === 'squeeze') {
+      audio.squeeze();
+      nitro = Math.min(1, nitro + NITRO_GAIN.squeeze);
+      missions.track({ squeeze: 1 });
+    } else if (e.kind === 'combo-lost' || e.kind === 'crash') {
+      audio.comboLost();
+      if (e.kind === 'crash') run.cleanFrom = car.s;
+    }
     maxCombo = Math.max(maxCombo, scoring.multiplier);
   };
 
@@ -470,6 +527,7 @@ async function boot(): Promise<void> {
   menu.setTuning(tunings[spec.id] ?? {});
   refreshWallet();
   menu.setBest(save.bestScore ?? 0, save.bestKm ?? 0);
+  menu.setMissions(missions.views());
   void platform.playerName().then((n) => menu.setPlayerName(n || save.name!));
   menu.setPlayerName(save.name);
   void showCar();
@@ -486,6 +544,7 @@ async function boot(): Promise<void> {
     }
     toShowroom();
     showroom.snap();
+    adaptive.reset();
     menu.go('lobby');
     menu.setBest(save.bestScore ?? 0, save.bestKm ?? 0);
     audio.setMuted(adPaused);
@@ -507,6 +566,15 @@ async function boot(): Promise<void> {
     runStart = car.s;
     maxCombo = 1;
     crashed = false;
+    nitro = 0.5;
+    boosting = false;
+    car.boost = 0;
+    run.time = 0;
+    run.topSpeed = 0;
+    run.lastS = run.cleanFrom = car.s;
+    oncoming.reset(car.s, road.viewAhead);
+    adaptive.reset();
+    hud.banner(next.name, next.subtitle);
     mode = 'play';
     showroom.setActive(false);
     rig.showcase = false;
@@ -538,7 +606,13 @@ async function boot(): Promise<void> {
     const prevBest = save.bestScore ?? 0;
     const newBest = scoring.score > prevBest;
     const earned = testDrive || settings.ghostTraffic ? 0 : runPayout(scoring.score, km, wrecked);
-    money += earned;
+    // Test drives and ghost traffic don't count toward missions either.
+    const done = testDrive || settings.ghostTraffic ? [] : missions.endRun();
+    money += earned + done.reduce((sum, m) => sum + m.reward, 0);
+    if (done.length) audio.reward();
+    menu.setMissions(missions.views());
+    boosting = false;
+    car.boost = 0;
     save.bestScore = Math.max(prevBest, Math.round(scoring.score));
     save.bestKm = Math.max(save.bestKm ?? 0, Math.round(km * 100) / 100);
     persist();
@@ -554,6 +628,10 @@ async function boot(): Promise<void> {
       crashed: wrecked,
       earned,
       testDrive,
+      topSpeedKmh: run.topSpeed / KMH,
+      avgSpeedKmh: run.time > 1 ? (km / run.time) * 3600 : 0,
+      timeSec: run.time,
+      missions: done,
     });
     audio.setMuted(true);
   }
@@ -573,7 +651,10 @@ async function boot(): Promise<void> {
   input.onKey('ShiftLeft', () => shift(1));
   input.onKey('KeyQ', () => shift(-1));
   input.onKey('ControlLeft', () => shift(-1));
-  input.onKey('KeyN', () => void applyPreset(env.preset === 'golden' ? 'day' : env.preset === 'day' ? 'night' : 'golden'));
+  input.onKey('KeyN', () => {
+    map = MAPS[(MAPS.indexOf(map) + 1) % MAPS.length];
+    void applyMap(map);
+  });
   input.onKey('KeyH', () => hud.toggle());
   input.onKey('KeyC', () => {
     rig.toggleMode();
@@ -639,7 +720,18 @@ async function boot(): Promise<void> {
         controls.throttle = live && input.isDown('throttle') ? 1 : 0;
         controls.brake = live && input.isDown('brake') ? 1 : 0;
         controls.steer = live ? input.steer : 0;
+        // Nitro: needs a little in the tank to light, then burns until released or empty.
+        const want = live && input.isDown('nitro') && nitro > (boosting ? 0 : 0.08);
+        if (want && !boosting) audio.nitro();
+        boosting = want;
+        if (boosting) {
+          nitro = Math.max(0, nitro - dt / NITRO_BURN);
+          missions.track({ nitro: dt });
+        } else nitro = Math.min(1, nitro + NITRO_REGEN * dt);
+        run.time += dt;
       }
+      if (mode !== 'play') boosting = false;
+      car.boost += ((boosting ? 1 : 0) - car.boost) * damp(boosting ? 9 : 4, dt);
       car.update(dt, controls);
       for (const k of ['abs', 'esp', 'tcs'] as const) {
         const on = k === 'abs' ? car.absActive : k === 'esp' ? car.espActive : car.tcsActive;
@@ -652,6 +744,7 @@ async function boot(): Promise<void> {
       if (hit > 0.4) {
         rig.bump(hit);
         audio.impact(hit);
+        run.cleanFrom = car.s;
         if (mode === 'play') {
           scoring.crash();
           if (hit > WRECK_SPEED) {
@@ -665,6 +758,7 @@ async function boot(): Promise<void> {
     },
     update: (dt) => {
       time += dt;
+      adaptive.tick(dt);
       if (mode === 'lobby') {
         showroom.update(dt);
         audio.update(dt, {
@@ -690,19 +784,44 @@ async function boot(): Promise<void> {
         rig.bump(car.impact);
         if (car.impact > 1) {
           audio.scrape(car.impact, Math.sign(car.x));
+          run.cleanFrom = car.s;
           if (mode === 'play') scoring.crash();
         }
         car.impact = 0;
       }
       road.update(car.s);
       view.update(dt, car, origin);
-      trafficView.update(dt, traffic.cars, origin);
+      rig.boost = car.boost;
       rig.update(dt, cameraTarget(), origin);
+      const night = isNight(env.preset);
+      const carZ = -(car.s - origin);
+      glows.fog = env.fogAmount;
+      glows.begin(rig.camera.position.z);
+      trafficView.update(dt, traffic.cars, origin, car.s, glows);
+      oncoming.update(dt, car.s, origin, road.viewAhead, night, glows);
+      if (night) {
+        // Halo on every street lamp in view (the pooled spot lights only cover the nearest few).
+        const tokyo = map.theme === 'tokyo';
+        for (const l of road.lamps) {
+          const ds = l.z - car.s;
+          if (ds < -20 || ds > 900) continue;
+          if (tokyo) glows.add(l.x, l.y, -(l.z - origin), 3.8, 0.7, 1.0, 1.3);
+          else glows.add(l.x, l.y, -(l.z - origin), 3.8, 1.3, 0.95, 0.5);
+        }
+      }
+      if (car.boost > 0.05) {
+        // Nitro flames at the tailpipes.
+        const f = car.boost * (0.75 + 0.25 * Math.sin(time * 67) * Math.sin(time * 41));
+        const zt = carZ + view.model.length / 2 + 0.12;
+        for (const side of [-1, 1]) glows.add(car.x + side * view.model.width * 0.26, 0.34, zt, 1.5 * f, 0.9 * f, 2.2 * f, 5 * f);
+      }
+      glows.end();
+      weather.update(time, rig.camera, car.speed, renderer.domElement.height);
       focus.set(car.x, 0, -(car.s - origin) - 18);
       env.follow(focus);
       lights.update(car.s, origin);
       scenery.update(rig.camera.position, car.s);
-      post.update(mode === 'play' && rig.introDone ? car.speed / (300 * KMH) : 0, time);
+      post.update(mode === 'play' && rig.introDone ? car.speed / (300 * KMH) : 0, time, car.boost);
 
       // Closest traffic car for the pass-by whoosh.
       let near: { dx: number; ds: number; v: number } | null = null;
@@ -727,6 +846,15 @@ async function boot(): Promise<void> {
       hudTimer -= dt;
       if (hudTimer <= 0 && mode === 'play') {
         hudTimer = 0.05;
+        run.topSpeed = Math.max(run.topSpeed, car.speed);
+        missions.track({
+          km: (car.s - run.lastS) / 1000,
+          score: scoring.score,
+          combo: scoring.multiplier,
+          speedKmh: car.speed / KMH,
+          cleanKm: (car.s - run.cleanFrom) / 1000,
+        });
+        run.lastS = car.s;
         const zone = road.layout.zoneAt(car.s + 200) ?? road.layout.zoneAt(car.s);
         let pocketInfo = '';
         if (zone) {
@@ -750,6 +878,8 @@ async function boot(): Promise<void> {
           abs: aidT.abs > 0,
           esp: aidT.esp > 0,
           tcs: aidT.tcs > 0,
+          nitro01: nitro,
+          nitroActive: boosting,
         });
       }
     },
@@ -771,7 +901,7 @@ async function boot(): Promise<void> {
   // Debug handle for console tinkering and automated screenshots.
   Object.assign(window, {
     __game: {
-      renderer, scene, car, road, env, rig, showroom, menu, settings, applyPreset, switchCar, platform, scoring, audio, startRun, endRun, setPaused,
+      renderer, scene, car, road, env, rig, showroom, menu, hud, settings, applyMap, switchCar, platform, scoring, audio, startRun, endRun, setPaused,
       get traffic() { return traffic; },
       get view() { return view; },
       get mode() { return mode; },

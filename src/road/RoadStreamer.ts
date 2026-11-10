@@ -9,7 +9,9 @@ export class RoadStreamer {
   readonly layout: RoadLayout;
   private builder: RoadChunkBuilder;
   private chunks = new Map<number, RoadChunk>();
-  private readonly maxBuildsPerFrame = 2;
+  private readonly maxBuildsPerFrame = 1;
+  private lampCache: THREE.Vector3[] = [];
+  private lampsDirty = true;
   /** Streamed road ahead of the player, m (settings → draw distance). */
   viewAhead = VIEW_AHEAD;
 
@@ -39,6 +41,7 @@ export class RoadStreamer {
       if (i < first || i > last) {
         chunk.dispose();
         this.chunks.delete(i);
+        this.lampsDirty = true;
       }
     }
     let built = 0;
@@ -47,19 +50,34 @@ export class RoadStreamer {
       const chunk = this.builder.build(i, i * CHUNK_LENGTH, (i + 1) * CHUNK_LENGTH);
       this.root.add(chunk.group);
       this.chunks.set(i, chunk);
+      this.lampsDirty = true;
       built++;
     }
   }
 
-  /** Lamp positions in road space (x, y, s), nearest first after `s`. */
+  /** Drops every chunk and refills the view (the map's road furniture changed). */
+  rebuild(s: number): void {
+    for (const chunk of this.chunks.values()) chunk.dispose();
+    this.chunks.clear();
+    this.lampsDirty = true;
+    this.prime(s);
+  }
+
+  /** Every streamed lamp in road space (x, y, s), ordered along the road. Rebuilt only when chunks change. */
+  get lamps(): readonly THREE.Vector3[] {
+    if (this.lampsDirty) {
+      this.lampsDirty = false;
+      this.lampCache.length = 0;
+      for (const chunk of this.chunks.values()) for (const l of chunk.lamps) this.lampCache.push(new THREE.Vector3(l.x, l.y, chunk.s0 - l.z));
+      this.lampCache.sort((a, b) => a.z - b.z);
+    }
+    return this.lampCache;
+  }
+
+  /** Lamps in [s - behind, s + ahead], nearest first. */
   lampsAhead(s: number, behind: number, ahead: number, out: THREE.Vector3[] = []): THREE.Vector3[] {
     out.length = 0;
-    for (const chunk of this.chunks.values()) {
-      for (const l of chunk.lamps) {
-        const ls = chunk.s0 - l.z;
-        if (ls >= s - behind && ls <= s + ahead) out.push(new THREE.Vector3(l.x, l.y, ls));
-      }
-    }
-    return out.sort((a, b) => a.z - b.z);
+    for (const l of this.lamps) if (l.z >= s - behind && l.z <= s + ahead) out.push(l);
+    return out;
   }
 }

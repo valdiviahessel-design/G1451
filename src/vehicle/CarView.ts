@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import type { VehicleSpec } from '../assets/vehicles';
 import type { VehicleLoader, VehicleModel } from '../assets/VehicleLoader';
 import type { CarTuning } from '../gameplay/economy';
+import { createGlow } from '../graphics/WorldTextures';
+
+let glowTex: THREE.Texture | null = null;
 import type { PlayerCar } from './PlayerCar';
 
 /** Damped spring for one body axis (roll or pitch). */
@@ -40,6 +43,10 @@ export class CarView {
   private readonly factory: { paint: THREE.Color; rim: THREE.Color; tint: number };
   /** Ride-height drop from tuning, m (negative = lower). */
   private drop = 0;
+  /** Neon underglow: an additive pool of light on the road beneath the car. */
+  private readonly underglow: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  private night = false;
+  private glowColor = 0;
 
   private constructor(
     readonly model: VehicleModel,
@@ -50,6 +57,17 @@ export class CarView {
     this.beam.position.copy(model.headlightPos);
     this.beam.target.position.set(0, -0.6, model.headlightPos.z - 40);
     model.root.add(this.beam, this.beam.target);
+    glowTex ??= createGlow();
+    const pool = new THREE.PlaneGeometry(model.width * 2.6, model.length * 1.7);
+    pool.rotateX(-Math.PI / 2);
+    this.underglow = new THREE.Mesh(
+      pool,
+      new THREE.MeshBasicMaterial({ map: glowTex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }),
+    );
+    this.underglow.position.y = 0.02;
+    this.underglow.renderOrder = 2;
+    this.underglow.visible = false;
+    model.root.add(this.underglow);
     this.rollCentre = model.body.position.y;
     const m = model.materials;
     this.factory = { paint: m.paint.color.clone(), rim: m.rim.color.clone(), tint: spec.tint };
@@ -69,16 +87,27 @@ export class CarView {
   }
 
   setNight(on: boolean): void {
+    this.night = on;
     this.model.materials.lights.setNight(on);
     this.beam.intensity = on ? 240 : 0;
+    this.applyGlow();
+  }
+
+  private applyGlow(): void {
+    this.underglow.visible = this.glowColor > 0;
+    // Daylight washes neon out; after dark it floods the tarmac.
+    this.underglow.material.color.setHex(this.glowColor).multiplyScalar(this.night ? 2.6 : 0.9);
   }
 
   applyTuning(t: CarTuning): void {
     const m = this.model.materials;
     m.setPaint(t.paint ?? this.factory.paint);
     m.rim.color.set(t.rim ?? this.factory.rim);
+    m.setFinish(t.finish);
     m.setTint(t.tint ?? this.factory.tint);
     this.drop = t.drop ?? 0;
+    this.glowColor = t.glow ?? 0;
+    this.applyGlow();
   }
 
   /** Parked pose for the showroom: level body, straight wheels, brakes off. */
@@ -118,6 +147,8 @@ export class CarView {
   }
 
   dispose(): void {
+    this.underglow.geometry.dispose();
+    this.underglow.material.dispose();
     this.beam.dispose();
     this.model.dispose();
   }
