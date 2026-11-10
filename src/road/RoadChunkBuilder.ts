@@ -6,10 +6,13 @@ import {
   LANE_WIDTH,
   MEDIAN_SHOULDER_WIDTH,
   NOISE_PERIOD,
+  OPP_INNER,
+  OPP_OUTER,
   SHOULDER_WIDTH,
   UV_PERIOD,
 } from '../config';
 import type { Materials } from '../graphics/Materials';
+import { box, toriiGeometry } from '../world/props';
 import type { RoadLayout } from './RoadLayout';
 
 /**
@@ -87,13 +90,13 @@ const LAMP_SPACING = 50;
 /** Shared, never-disposed prop geometry. */
 class PropGeometry {
   readonly lampPole: THREE.BufferGeometry;
-  readonly lampHead: THREE.BufferGeometry;
   readonly lampLens: THREE.BufferGeometry;
   readonly guardPost: THREE.BufferGeometry;
   readonly signPole: THREE.BufferGeometry;
   readonly signFace: THREE.BufferGeometry;
   readonly signBack: THREE.BufferGeometry;
   readonly plateFace: THREE.BufferGeometry;
+  readonly gantryFace: THREE.BufferGeometry;
   /** Lens position relative to the pole base (arm reaches toward -x). */
   readonly lensOffset = new THREE.Vector3(-2.75, 9.62, 0);
 
@@ -105,11 +108,9 @@ class PropGeometry {
     arm.translate(-1.4, 9.85, 0);
     const base = new THREE.CylinderGeometry(0.22, 0.26, 0.5, 12);
     base.translate(0, 0.25, 0);
-    this.lampPole = mergeGeometries([pole, arm, base])!;
-
     const head = new THREE.BoxGeometry(0.85, 0.16, 0.38);
     head.translate(-2.75, 9.72, 0);
-    this.lampHead = head;
+    this.lampPole = mergeGeometries([pole, arm, base, head])!;
     const lens = new THREE.PlaneGeometry(0.7, 0.28);
     lens.rotateX(Math.PI / 2);
     lens.translate(-2.75, 9.635, 0);
@@ -128,7 +129,14 @@ class PropGeometry {
     this.signBack.translate(0, 3.25, 0.0);
     this.plateFace = new THREE.PlaneGeometry(1.0, 0.39);
     this.plateFace.translate(0, 2.08, 0.03);
+    this.gantryFace = new THREE.PlaneGeometry(5.6, 2.33);
   }
+}
+
+/** Stable 0..1 hash of an integer (wall stretches, per-block variation). */
+function hash(n: number): number {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
 }
 
 let props: PropGeometry | null = null;
@@ -167,6 +175,9 @@ export class RoadChunkBuilder {
     group.add(this.guardPosts(s0, s1));
     const lamps = this.streetLights(s0, s1, group);
     this.signs(s0, s1, group);
+    const walls = this.walls(s0, s1);
+    if (walls) add(walls, this.mats.wall, { cast: true });
+    this.structures(s0, s1, group, owned);
 
     return {
       index,
@@ -217,6 +228,27 @@ export class RoadChunkBuilder {
       }
     }
     b.gridIndices(0, rows.length, 4);
+
+    // Oncoming carriageway: dead straight, so two rows span the chunk.
+    const base = b.count;
+    const mid = (OPP_INNER + OPP_OUTER) / 2;
+    for (const s of [s0, s1]) {
+      const ds = s - s0;
+      const cols = [
+        [OPP_OUTER - SHOULDER_WIDTH, 1],
+        [OPP_OUTER, 0],
+        [OPP_INNER, 0],
+        [OPP_INNER + MEDIAN_SHOULDER_WIDTH, 1],
+      ];
+      for (const [x, sh] of cols) {
+        b.positions.push(x, 0, -ds);
+        b.normals.push(0, 1, 0);
+        b.uvs.push((x - mid) / LANE_WIDTH + 0.5, (uvBase + ds) / LANE_WIDTH);
+        roadPos.push(x, noiseBase + ds);
+        shoulder.push(sh);
+      }
+    }
+    b.gridIndices(base, 2, 4);
     return b.build();
   }
 
@@ -258,6 +290,11 @@ export class RoadChunkBuilder {
     for (const x of [-LANE_WIDTH / 2, LANE_WIDTH / 2]) this.dashes(b, s0, s1, DASH, () => x);
     this.ribbon(b, s0, (s) => L.leftEdge(s) + EDGE_WIDTH / 2, s0, s1, EDGE_WIDTH, CHUNK_STEP);
     this.ribbon(b, s0, (s) => L.rightEdge(s) - EDGE_WIDTH / 2, s0, s1, EDGE_WIDTH, CHUNK_STEP);
+
+    // Oncoming carriageway.
+    for (const k of [1, 2]) this.dashes(b, s0, s1, DASH, () => OPP_INNER - k * LANE_WIDTH);
+    this.ribbon(b, s0, () => OPP_INNER - EDGE_WIDTH / 2, s0, s1, EDGE_WIDTH, s1 - s0);
+    this.ribbon(b, s0, () => OPP_OUTER + EDGE_WIDTH / 2, s0, s1, EDGE_WIDTH, s1 - s0);
 
     // Broad dashed separator between main lanes and an open pocket.
     for (const z of L.zonesIn(s0, s1)) {
@@ -302,9 +339,11 @@ export class RoadChunkBuilder {
     outward: -1 | 1,
     profile: [number, number][],
     smooth: boolean,
+    step = CHUNK_STEP,
+    uScale = 1,
   ): THREE.BufferGeometry {
     const b = new GeoBuilder();
-    const rows = this.rows(s0, s1);
+    const rows = this.rows(s0, s1, step);
     const segments = smooth ? [profile] : profile.slice(0, -1).map((p, i) => [p, profile[i + 1]]);
     for (const seg of segments) {
       const base = b.count;
@@ -316,7 +355,7 @@ export class RoadChunkBuilder {
         const v = ((s0 % UV_PERIOD) + ds) / 3;
         seg.forEach(([off, y], i) => {
           b.positions.push(x0 + off * outward, y, -ds);
-          b.uvs.push(arcs[i], v);
+          b.uvs.push(arcs[i] * uScale, v);
         });
       }
       // Winding chosen so faces point toward the road on either side.
@@ -336,19 +375,27 @@ export class RoadChunkBuilder {
       [-0.08, 0.72],
       [0, 0.78],
     ];
-    return this.sweep(s0, s1, (s) => L.rightEdge(s) + SHOULDER_WIDTH + 0.45, 1, profile, true);
+    const right = this.sweep(s0, s1, (s) => L.rightEdge(s) + SHOULDER_WIDTH + 0.45, 1, profile, true);
+    // Far side of the oncoming carriageway.
+    const left = this.sweep(s0, s1, () => OPP_OUTER - SHOULDER_WIDTH - 0.45, -1, profile, true, s1 - s0);
+    const both = mergeGeometries([right, left])!;
+    right.dispose();
+    left.dispose();
+    return both;
   }
 
   private guardPosts(s0: number, s1: number): THREE.InstancedMesh {
     const spacing = 4;
     const first = Math.ceil(s0 / spacing) * spacing;
     const count = Math.max(0, Math.ceil((s1 - first) / spacing));
-    const mesh = new THREE.InstancedMesh(this.props.guardPost, this.mats.steelPost, count);
+    const mesh = new THREE.InstancedMesh(this.props.guardPost, this.mats.steelPost, count * 2);
     const m = new THREE.Matrix4();
     for (let i = 0; i < count; i++) {
       const s = first + i * spacing;
       m.makeTranslation(this.layout.rightEdge(s) + SHOULDER_WIDTH + 0.55, 0, -(s - s0));
       mesh.setMatrixAt(i, m);
+      m.makeTranslation(OPP_OUTER - SHOULDER_WIDTH - 0.55, 0, -(s - s0));
+      mesh.setMatrixAt(count + i, m);
     }
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -375,26 +422,113 @@ export class RoadChunkBuilder {
   private streetLights(s0: number, s1: number, group: THREE.Group): THREE.Vector3[] {
     const lamps: THREE.Vector3[] = [];
     const first = Math.ceil(s0 / LAMP_SPACING);
-    for (let k = first; k * LAMP_SPACING < s1; k++) {
+    const count = Math.max(0, Math.ceil(s1 / LAMP_SPACING) - first);
+    if (!count) return lamps;
+    // One instanced draw per part instead of three meshes per lamp.
+    const poles = new THREE.InstancedMesh(this.props.lampPole, this.mats.lampPole, count);
+    const lenses = new THREE.InstancedMesh(this.props.lampLens, this.mats.lampLens, count);
+    poles.castShadow = true;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const p = new THREE.Vector3();
+    const one = new THREE.Vector3(1, 1, 1);
+    for (let i = 0; i < count; i++) {
+      const k = first + i;
       const s = k * LAMP_SPACING;
       const right = k % 2 === 0;
       const x = right
         ? this.layout.rightEdge(s) + SHOULDER_WIDTH + 1.3
         : this.layout.leftEdge(s) - MEDIAN_SHOULDER_WIDTH - 0.05 - 0.303;
-      const lamp = new THREE.Group();
-      lamp.position.set(x, right ? 0 : 0.81, -(s - s0));
+      p.set(x, right ? 0 : 0.81, -(s - s0));
       // Arm geometry reaches toward -x; flip for median-mounted poles.
-      if (!right) lamp.rotation.y = Math.PI;
-      const pole = new THREE.Mesh(this.props.lampPole, this.mats.lampPole);
-      pole.castShadow = true;
-      const head = new THREE.Mesh(this.props.lampHead, this.mats.lampHead);
-      head.castShadow = true;
-      const lens = new THREE.Mesh(this.props.lampLens, this.mats.lampLens);
-      lamp.add(pole, head, lens);
-      group.add(lamp);
-      lamps.push(this.props.lensOffset.clone().applyEuler(lamp.rotation).add(lamp.position));
+      q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, right ? 0 : Math.PI);
+      m.compose(p, q, one);
+      poles.setMatrixAt(i, m);
+      lenses.setMatrixAt(i, m);
+      lamps.push(this.props.lensOffset.clone().applyQuaternion(q).add(p));
     }
+    poles.computeBoundingSphere();
+    lenses.computeBoundingSphere();
+    group.add(poles, lenses);
     return lamps;
+  }
+
+  /** Noise barriers: continuous along the Tokyo expressway, occasional stretches elsewhere. */
+  private walls(s0: number, s1: number): THREE.BufferGeometry | null {
+    const theme = this.mats.theme;
+    if (theme === 'japan') return null;
+    const block = Math.floor(s0 / 250);
+    const on = theme === 'tokyo' || hash(block) < 0.22;
+    if (!on) return null;
+    const h = theme === 'tokyo' ? 4.2 : 3.4;
+    const profile: [number, number][] = [
+      [0, 0],
+      [0, h],
+    ];
+    const L = this.layout;
+    const right = this.sweep(s0, s1, (s) => L.rightEdge(s) + SHOULDER_WIDTH + 1.25, 1, profile, true, CHUNK_STEP * 2, 1 / h);
+    if (theme !== 'tokyo') return right;
+    const left = this.sweep(s0, s1, () => OPP_OUTER - SHOULDER_WIDTH - 1.25, -1, profile, true, s1 - s0, 1 / h);
+    const both = mergeGeometries([right, left])!;
+    right.dispose();
+    left.dispose();
+    return both;
+  }
+
+  /** Overhead sign gantries every 800 m and a landmark (viaduct or giant torii) every 1.6 km. */
+  private structures(s0: number, s1: number, group: THREE.Group, owned: THREE.BufferGeometry[]): void {
+    const L = this.layout;
+    const medianX = (s: number) => L.leftEdge(s) - MEDIAN_SHOULDER_WIDTH - 0.05 - 0.606;
+    const STEEL = 0x6c7278;
+    for (let k = Math.ceil((s0 - 400) / 800); 400 + k * 800 < s1; k++) {
+      const s = 400 + k * 800;
+      if (s < s0) continue;
+      const xl = medianX(s) - 0.35;
+      const xr = L.rightEdge(s) + SHOULDER_WIDTH + 1.0;
+      const z = -(s - s0);
+      const frame = mergeGeometries([
+        box(0.4, 8.2, 0.4, xl, 0, z, STEEL),
+        box(0.4, 8.2, 0.4, xr, 0, z, STEEL),
+        box(xr - xl, 0.22, 0.5, (xl + xr) / 2, 7.9, z, STEEL),
+        box(xr - xl, 0.22, 0.5, (xl + xr) / 2, 6.9, z, STEEL),
+      ])!;
+      const mesh = new THREE.Mesh(frame, this.mats.props);
+      mesh.castShadow = true;
+      group.add(mesh);
+      owned.push(frame);
+      const mid = (L.leftEdge(s) + L.rightEdge(s)) / 2;
+      for (const side of [-1, 1]) {
+        const face = new THREE.Mesh(this.props.gantryFace, this.mats.gantrySign(k * 2 + (side + 1) / 2));
+        face.position.set(mid + side * 2.95, 7.45, z + 0.3);
+        group.add(face);
+      }
+    }
+    for (let k = Math.ceil((s0 - 1000) / 1600); 1000 + k * 1600 < s1; k++) {
+      const s = 1000 + k * 1600;
+      if (s < s0) continue;
+      const z = -(s - s0);
+      let geo: THREE.BufferGeometry;
+      if (this.mats.theme === 'japan') {
+        const xl = medianX(s) - 0.95;
+        const xr = L.rightEdge(s) + SHOULDER_WIDTH + 2.2;
+        geo = toriiGeometry(xr - xl, 12.5, 0.8);
+        geo.translate((xl + xr) / 2, 0, z);
+      } else {
+        const CONCRETE = 0x9b9a94;
+        const piers = [L.rightEdge(s) + SHOULDER_WIDTH + 2.4, medianX(s) - 0.7, OPP_OUTER - SHOULDER_WIDTH - 2.4, 34, 54, -50, -70];
+        geo = mergeGeometries([
+          box(170, 1.5, 11, -8, 6.5, z, CONCRETE),
+          box(170, 0.95, 0.3, -8, 8, z - 5.35, 0x7d7c78),
+          box(170, 0.95, 0.3, -8, 8, z + 5.35, 0x7d7c78),
+          ...piers.map((x) => box(1.1, 6.5, 7.5, x, 0, z, 0x8a8984)),
+        ])!;
+      }
+      const mesh = new THREE.Mesh(geo, this.mats.props);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+      owned.push(geo);
+    }
   }
 
   private signs(s0: number, s1: number, group: THREE.Group): void {
