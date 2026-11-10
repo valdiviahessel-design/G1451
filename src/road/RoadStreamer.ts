@@ -51,6 +51,13 @@ export class RoadStreamer {
     }
   }
 
+  /** Drops every chunk and refills the view (the map's road furniture changed). */
+  rebuild(s: number): void {
+    for (const chunk of this.chunks.values()) chunk.dispose();
+    this.chunks.clear();
+    this.prime(s);
+  }
+
   /** Lamp positions in road space (x, y, s), nearest first after `s`. */
   lampsAhead(s: number, behind: number, ahead: number, out: THREE.Vector3[] = []): THREE.Vector3[] {
     out.length = 0;

@@ -32,6 +32,10 @@ export class StreetLightPool {
     for (const l of this.lights) l.visible = on;
   }
 
+  setColor(color: THREE.ColorRepresentation): void {
+    for (const l of this.lights) l.color.set(color);
+  }
+
   update(s: number, origin: number): void {
     if (!this.enabled) return;
     this.road.lampsAhead(s, 30, this.reach, this.lamps);
