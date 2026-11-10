@@ -771,7 +771,7 @@ async function boot(): Promise<void> {
   // Debug handle for console tinkering and automated screenshots.
   Object.assign(window, {
     __game: {
-      renderer, scene, car, road, env, rig, showroom, menu, settings, applyPreset, switchCar, platform, scoring, audio, startRun, endRun, setPaused,
+      renderer, scene, car, road, env, rig, showroom, menu, hud, settings, applyPreset, switchCar, platform, scoring, audio, startRun, endRun, setPaused,
       get traffic() { return traffic; },
       get view() { return view; },
       get mode() { return mode; },

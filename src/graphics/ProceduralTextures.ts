@@ -8,20 +8,20 @@ import { Rng } from '../core/math';
 
 type Canvas = HTMLCanvasElement;
 
-function canvas(w: number, h = w): Canvas {
+export function canvas(w: number, h = w): Canvas {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
   return c;
 }
 
-function ctx2d(c: Canvas): CanvasRenderingContext2D {
+export function ctx2d(c: Canvas): CanvasRenderingContext2D {
   const g = c.getContext('2d', { willReadFrequently: true });
   if (!g) throw new Error('2D canvas unavailable');
   return g;
 }
 
-function toTexture(c: Canvas, srgb: boolean, anisotropy: number, repeat = true): THREE.CanvasTexture {
+export function toTexture(c: Canvas, srgb: boolean, anisotropy: number, repeat = true): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   t.anisotropy = anisotropy;
